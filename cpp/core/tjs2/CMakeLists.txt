@@ -25,27 +25,25 @@ set(BISON_FILES
     ${CMAKE_CURRENT_LIST_DIR}/bison/tjspp.y
 )
 set(PARSE_TAB_CPP_FILES)
+# win_bison shares extern_stdin within this directory. Chain only parser
+# generation; native compilation remains parallel.
+set(PREVIOUS_BISON_OUTPUT)
 foreach(BISON_FILE ${BISON_FILES})
     get_filename_component(FILE_NAME ${BISON_FILE} NAME_WE)
 
-    execute_process(
-        TIMEOUT 5000
-        COMMAND ${BISON_EXECUTABLE} ${BISON_FILE}
-        WORKING_DIRECTORY ${GEN_CODE_BINARY_DIR}
-        COMMAND_ECHO STDOUT
-    )
 
     add_custom_command(
         OUTPUT
             ${GEN_CODE_BINARY_DIR}/${FILE_NAME}.tab.cpp
             ${GEN_CODE_BINARY_DIR}/${FILE_NAME}.tab.hpp
-        DEPENDS ${BISON_FILE}
+        DEPENDS ${BISON_FILE} ${PREVIOUS_BISON_OUTPUT}
         COMMAND ${BISON_EXECUTABLE} ${BISON_FILE}
         WORKING_DIRECTORY ${GEN_CODE_BINARY_DIR}
         COMMENT "Generate Bison File From ${BISON_FILE}"
     )
 
     list(APPEND PARSE_TAB_CPP_FILES ${GEN_CODE_BINARY_DIR}/${FILE_NAME}.tab.cpp)
+    set(PREVIOUS_BISON_OUTPUT ${GEN_CODE_BINARY_DIR}/${FILE_NAME}.tab.cpp)
 endforeach()
 
 add_custom_target(GENERATE_CPP_FILES DEPENDS ${PARSE_TAB_CPP_FILES})
