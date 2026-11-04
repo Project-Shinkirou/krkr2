@@ -13,6 +13,7 @@ The C ABI v3 adapter lives in `shinki/`. Its owner-thread, frame-lease, cancella
 - VM caches, at-exit callbacks and native resources are reset between sessions. Native exceptions stay behind the C ABI boundary; a failed teardown prevents unsafe reuse.
 - Static linking resolves CMake's transitive archive closure and prefixes its defined symbols. Android Java/JNI packages use independent `org.kr2rc2dx`, `org.shinkirou.krk2` and `org.tvp.krkr2core` namespaces, allowing both KiriKiri implementations in one Manager process.
 - The Cocos overlay gains explicit iOS selection, an iOS PVR header fix and JNI local-reference ownership fixes. Its macOS audio compatibility patch no longer renames the real iOS AVAudioSession class.
+- The pinned AsmJit overlay includes Apple's instruction-cache declarations on iOS as well as macOS. It preserves `sys_icache_invalidate` rather than omitting cache maintenance.
 
 The original per-game preferences and save paths remain upstream-owned. The temporary writable resource directory belongs only to Cocos runtime resources and is removed after session shutdown; no adapter-managed save root is introduced.
 

@@ -1,0 +1,14 @@
+diff --git a/src/asmjit/core/virtmem.cpp b/src/asmjit/core/virtmem.cpp
+--- a/src/asmjit/core/virtmem.cpp
++++ b/src/asmjit/core/virtmem.cpp
+@@ -61,9 +61,9 @@
+   #if defined(__APPLE__)
+     #include <pthread.h>
+     #include <TargetConditionals.h>
++    #include <libkern/OSCacheControl.h> // sys_icache_invalidate() on all Apple targets.
+     #if TARGET_OS_OSX
+       #include <sys/utsname.h>
+-      #include <libkern/OSCacheControl.h> // sys_icache_invalidate().
+     #endif
+     // Older SDK doesn't define `MAP_JIT`.
+     #ifndef MAP_JIT
