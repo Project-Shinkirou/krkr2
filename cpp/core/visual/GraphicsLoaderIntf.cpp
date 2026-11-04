@@ -2070,7 +2070,6 @@ private:
                     if(Stopping) return;
                     current.reset(TaskList.front());
                     TaskList.pop_front();
-                }
                     ReqInterrupt.store(false);
                 }
                 tjs_uint totalSize = 0;
@@ -2078,6 +2077,7 @@ private:
                     if(ReqInterrupt.load()) break;
                     totalSize += loadOneGraph(item);
                     if(totalSize >= static_cast<tjs_uint>(current->limit)) break;
+                }
             }
         } catch(...) {
             std::lock_guard<std::mutex> lock(TaskMutex);

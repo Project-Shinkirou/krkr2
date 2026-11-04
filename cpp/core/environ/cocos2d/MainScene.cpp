@@ -684,8 +684,8 @@ void TVPMainScene::doStartup(float dt, std::string path) {
 #if !defined(KRKR2_SHINKI_EMU)
         TVPControlAdDialog(0x10002, 0,
                            0); // ensure to close banner ad
-    }
 #endif
+    }
 
     TVPWindowLayer *pWin = TVPWindowLayer::_lastWindowLayer;
     while(pWin) {

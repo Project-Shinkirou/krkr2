@@ -120,7 +120,7 @@ void NativeInput::apply(const ShinkiKrkrEvent &event) {
         break;
     }
     case 10:
-        if(auto window = TVPGetCurrentWindowNative()) window->GetForm()->Close();
+        if(auto window = TVPGetCurrentWindowNative()) window->Close();
         break;
     default: throw std::runtime_error("SHINKI_EMU_KRKR_NATIVE_EVENT_KIND");
     }
