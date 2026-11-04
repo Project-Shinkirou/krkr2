@@ -60,6 +60,10 @@
       "name": "miniaudio",
       "platform": "android"
     },
+    {
+      "name": "oboe",
+      "platform": "android"
+    },
     "oniguruma",
     "openal-soft",
     {

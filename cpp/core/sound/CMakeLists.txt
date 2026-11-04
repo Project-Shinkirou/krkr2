@@ -35,7 +35,8 @@ set(SOUND_HEADERS_DIR
 )
 
 if(ANDROID)
-    find_package(oboe CONFIG REQUIRED)
+    find_path(OBOE_INCLUDE_DIR NAMES oboe/Oboe.h REQUIRED)
+    find_library(OBOE_LIBRARY NAMES oboe REQUIRED)
     list(APPEND SOUND_SOURCE_FILES ${SOUND_PATH}/win32/WaveMixerMiniaudio.cpp)
 endif()
 
@@ -50,6 +51,7 @@ find_package(OpusFile CONFIG REQUIRED)
 if(ANDROID)
     find_path(MINIAUDIO_INCLUDE_DIR NAMES miniaudio.h REQUIRED)
     target_include_directories(${PROJECT_NAME} PRIVATE ${MINIAUDIO_INCLUDE_DIR})
+    target_include_directories(${PROJECT_NAME} PRIVATE "${OBOE_INCLUDE_DIR}")
 
     set_source_files_properties(
         ${SOUND_PATH}/win32/WaveMixerMiniaudio.cpp
@@ -59,7 +61,7 @@ if(ANDROID)
     )
 
     target_link_libraries(${PROJECT_NAME} PRIVATE
-        oboe::oboe
+        "${OBOE_LIBRARY}" log OpenSLES
     )
 endif()
 
