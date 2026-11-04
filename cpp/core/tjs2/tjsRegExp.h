@@ -12,7 +12,6 @@
 #define tjsRegExpH
 
 #ifndef TJS_NO_REGEXP
-#define ONIG_EXTERN extern
 
 #include "oniguruma.h"
 #include "tjsNative.h"

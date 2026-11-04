@@ -69,6 +69,9 @@ static void TVPDestroyLogObjects() {
         delete TVPLogDeque, TVPLogDeque = nullptr;
     if(TVPImportantLogs)
         delete TVPImportantLogs, TVPImportantLogs = nullptr;
+    TVPLogObjectsInitialized = false;
+    TVPLogLocation.Clear();
+    TVPNativeLogLocation.Clear();
 }
 
 //---------------------------------------------------------------------------

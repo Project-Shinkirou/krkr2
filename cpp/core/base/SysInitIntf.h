@@ -23,6 +23,9 @@ extern ttstr TVPDataPath; // data directory
 extern void TVPSystemInit();
 
 extern void TVPSystemUninit();
+// Serialized reusable application lifecycle; no host/framework dependency.
+extern void TVPBeginSystemSession();
+extern void TVPResetSystemOptions();
 
 //-- implement in each platform
 extern void TVPBeforeSystemInit(); // this must set TVPProjectDir

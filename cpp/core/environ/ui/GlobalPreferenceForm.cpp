@@ -44,7 +44,7 @@ static void WalkConfig(tPreferenceScreen *pref) {
 }
 
 void TVPGlobalPreferenceForm::Initialize() {
-    static bool Inited = false;
+    static thread_local bool Inited = false;
     if(!Inited) {
         Inited = true;
         if(!GlobalConfigManager::GetInstance()->IsValueExist(

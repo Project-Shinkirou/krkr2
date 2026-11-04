@@ -38,6 +38,8 @@ GlobalConfigManager *GlobalConfigManager::GetInstance() {
 
 void iSysConfigManager::Initialize() {
     AllConfig.clear();
+    CustomArguments.clear();
+    KeyMap.clear();
     ConfigUpdated = false;
 
     tinyxml2::XMLDocument doc;

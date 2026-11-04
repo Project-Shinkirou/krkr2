@@ -94,6 +94,7 @@ private:
 public:
     tTVPApplication();
     ~tTVPApplication();
+    void StopImageLoader();
     bool StartApplication(ttstr path);
     void Run();
     void ProcessMessages();

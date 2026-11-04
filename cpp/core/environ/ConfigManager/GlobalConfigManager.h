@@ -17,6 +17,7 @@ protected:
     void Initialize();
 
 public:
+    void Reload() { Initialize(); }
     void SaveToFile();
 
     bool IsValueExist(const std::string &name);

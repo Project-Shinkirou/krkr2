@@ -8,6 +8,7 @@
 #include "WindowImpl.h"
 #include "MsgIntf.h"
 #include <string>
+#include <memory>
 #include "../tvpgl.h"
 #include "SysInitIntf.h"
 #include <assert.h>
@@ -1824,7 +1825,7 @@ protected:
     friend class TVPRenderManager_OpenGL;
     GLint pos_attr_location;
     std::vector<GLint> tex_coord_attr_location;
-    GLenum program;
+    GLenum program = 0;
     int BlendFunc = 0, BlendSrcRGB, BlendDstRGB, BlendSrcA, BlendDstA;
     // 	typedef
     // bool(tTVPOGLRenderMethod::*FCustomProc)(tTVPOGLTexture2D *,
@@ -1834,6 +1835,7 @@ protected:
 
 public:
     tTVPOGLRenderMethod() : tar_as_src(false) /*, CustomProc(nullptr)*/ {}
+    ~tTVPOGLRenderMethod() override { if(program) glDeleteProgram(program); }
     GLint GetPosAttr() const { return pos_attr_location; }
     GLint GetTexCoordAttr(unsigned int n) {
         if(n >= tex_coord_attr_location.size())
@@ -2332,7 +2334,7 @@ bool tTVPOGLTexture2D::RestoreNormalSize() {
 
                                               maxx, miny, minx,
                                               maxy, maxx, maxy };
-        static tTVPOGLRenderMethod *method =
+        static thread_local tTVPOGLRenderMethod *method =
             (tTVPOGLRenderMethod *)TVPGetRenderManager()->GetRenderMethod(
                 "Copy");
         method->Apply();
@@ -2419,11 +2421,29 @@ static iTVPTexture2D *(*_CreateMutableTexture2D)(const void *pixel, int pitch,
 static const char *_glExtensions = nullptr;
 // static bool _duplicateTargetTexture = true;
 class TVPRenderManager_OpenGL : public iTVPRenderManager {
+    // AllMethods also contains aliases; own each compiled method exactly once.
+    std::vector<std::unique_ptr<tTVPOGLRenderMethod>> owned_methods_;
+public:
+    ~TVPRenderManager_OpenGL() override {
+        if(_FBO) glDeleteFramebuffers(1, &_FBO);
+        if(_stencil_FBO) glDeleteRenderbuffers(1, &_stencil_FBO);
+        _FBO = _stencil_FBO = _CurrentRenderTarget = 0;
+        _CurrentFBOValid = false;
+        _stencilBufferW = _stencilBufferH = 0;
+        TVPGLExtensionInfoInited = false;
+        sTVPGLExtensions.clear();
+        TVPTextureFormats.clear();
+        tTVPOGLRenderMethod_Script::ClearCache();
+        _glExtensions = nullptr;
+        TVPSetPostUpdateEvent(nullptr);
+    }
 protected:
     tTVPOGLRenderMethod_Script *
     GetRenderMethodFromScript(const char *script, int nTex,
                               unsigned int flags) override {
-        tTVPOGLRenderMethod_Script *method = new tTVPOGLRenderMethod_Script();
+        auto owned = std::make_unique<tTVPOGLRenderMethod_Script>();
+        auto method = owned.get();
+        owned_methods_.push_back(std::move(owned));
         method->init(script, nTex);
         if(flags & RENDER_METHOD_FLAG_TARGET_AS_INPUT) {
             method->SetTargetAsSrc();
@@ -2434,7 +2454,9 @@ protected:
     template <typename T>
     T *CompileAndRegScript(const char *name, const std::string &script,
                            int nTex, const char *prefix = nullptr) {
-        T *method = new T();
+        auto owned = std::make_unique<T>();
+        auto method = owned.get();
+        owned_methods_.push_back(std::move(owned));
         method->init(script, nTex, prefix);
         RegisterRenderMethod(name, method);
         return method;
@@ -4424,7 +4446,7 @@ public:
             return;
         }
 
-        static tTVPOGLRenderMethod *method =
+        static thread_local tTVPOGLRenderMethod *method =
             (tTVPOGLRenderMethod *)GetRenderMethod("Copy");
         static const GLfloat minx = -1, maxx = 1, miny = -1, maxy = 1;
         static const GLfloat vertices[12] = { minx, miny, maxx,

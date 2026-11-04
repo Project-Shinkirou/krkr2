@@ -10,6 +10,7 @@
 
 #include "Application.h"
 #include "SysInitIntf.h"
+#include "EmbeddedSession.h"
 #include "SysInitImpl.h"
 #include "DebugIntf.h"
 #include "MsgIntf.h"
@@ -292,11 +293,24 @@ tTVPApplication::~tTVPApplication() {
     // のデストラクタ内でリストから削除されるはず
     // 	}
     // 	windows_list_.clear();
+    StopImageLoader();
+    delete TVPSystemControl;
+    TVPSystemControl = nullptr;
+    TVPSystemControlAlive = false;
+    _project_startup = false;
+}
+
+void tTVPApplication::StopImageLoader() {
     delete image_load_thread_;
+    image_load_thread_ = nullptr;
+    std::lock_guard<std::mutex> lock(m_msgQueueLock);
+    m_lstUserMsg.clear();
 }
 
 bool tTVPApplication::StartApplication(ttstr path) {
     //	_set_se_translator(se_translator_function);
+    TVPBeginSystemSession();
+    TVPResetSystemOptions();
 
     ArgC = 0;
     ArgV = nullptr;
@@ -356,6 +370,8 @@ bool tTVPApplication::StartApplication(ttstr path) {
         TVPInitializeStartupScript();
         _project_startup = true;
     } catch(const EAbort &) {
+    } catch(const TJS::eTJSSilent &) {
+        return false;
         // nothing to do
     } catch(const Exception &exception) {
         TVPOnError();
@@ -489,14 +505,15 @@ void tTVPApplication::BringToFront() {
 #endif
 void tTVPApplication::ShowException(const ttstr &e) {
     TVPShowSimpleMessageBox(e, TVPGetErrorDialogTitle());
-    TVPSystemUninit();
+    if(!TVPGetEmbeddedSessionHost()) TVPSystemUninit();
     TVPExitApplication(0);
 }
 void tTVPApplication::Run() {
     try {
         if(TVPTerminated) {
-            TVPSystemUninit();
+            if(!TVPGetEmbeddedSessionHost()) TVPSystemUninit();
             TVPExitApplication(TVPTerminateCode);
+            return;
         }
         //	TVPBreathe();
         ProcessMessages();
@@ -505,6 +522,8 @@ void tTVPApplication::Run() {
         //		TVPDeliverWindowUpdateEvents(); // from
         // SystemWatchTimerTimer
     } catch(const EAbort &) {
+    } catch(const TJS::eTJSSilent &) {
+        return;
         // nothing to do
 #if !(defined(_MSC_VER) && defined(_DEBUG))
     } catch(const Exception &exception) {

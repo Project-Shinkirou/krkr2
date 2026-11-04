@@ -10,10 +10,13 @@
 //---------------------------------------------------------------------------
 
 #include "tjsCommHead.h"
+#include <exception>
 
 #include <algorithm>
 #include "MsgIntf.h"
 #include "WindowIntf.h"
+#include "../environ/EmbeddedSession.h"
+#include "../environ/EmbeddedSession.h"
 #include "LayerIntf.h"
 #include "DebugIntf.h"
 #include "EventIntf.h"
@@ -63,6 +66,27 @@ static void TVPUnregisterWindowToList(tTJSNI_Window *window) {
         }
     }
 }
+
+static void TVPInvalidateSessionWindows() {
+    // Windows retain script/native cycles. Releasing the global object alone
+    // does not sever them; invalidate each registered owner while its form,
+    // layer managers and GL context still exist.
+    std::exception_ptr failure;
+    while(!TVPWindowVector.empty()) {
+        auto window = TVPWindowVector.back();
+        TVPWindowVector.pop_back();
+        if(TVPMainWindow == window) TVPMainWindow = nullptr;
+        auto owner = window->GetOwnerNoAddRef();
+        if(!owner) continue;
+        owner->AddRef();
+        try { owner->Invalidate(0, nullptr, nullptr, owner); }
+        catch(...) { if(!failure) failure = std::current_exception(); }
+        owner->Release();
+    }
+    if(failure) std::rethrow_exception(failure);
+}
+static tTVPAtExit TVPInvalidateSessionWindowsAtExit(
+    TVP_ATEXIT_PRI_PREPARE + 1, TVPInvalidateSessionWindows);
 //---------------------------------------------------------------------------
 tTJSNI_Window *TVPGetWindowListAt(tjs_int idx) { return TVPWindowVector[idx]; }
 //---------------------------------------------------------------------------
@@ -645,7 +669,14 @@ void tTJSNI_BaseWindow::BeginUpdate(const tTVPComplexRect &rects) {
     WindowUpdating = true;
 }
 //---------------------------------------------------------------------------
-void tTJSNI_BaseWindow::EndUpdate() { WindowUpdating = false; }
+void tTJSNI_BaseWindow::EndUpdate() {
+    const bool changed = WindowUpdating;
+    WindowUpdating = false;
+    if(changed) {
+        if(const auto host = TVPGetEmbeddedSessionHost())
+            host->frame_changed(host->context, this);
+    }
+}
 //---------------------------------------------------------------------------
 void tTJSNI_BaseWindow::DumpPrimaryLayerStructure() {
     if(DrawDevice)

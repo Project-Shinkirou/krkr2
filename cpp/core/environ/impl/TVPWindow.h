@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include "../EmbeddedSession.h"
 #include <cocos-ext.h>
 
 #include "tvpinputdefs.h"
@@ -39,6 +40,7 @@ protected:
     tjs_int ZoomDenom = 1; // Zooming factor denominator (setting)
     tjs_int ZoomNumer = 1; // Zooming factor numerator (setting)
     double TouchScaleThreshold = 5, TouchRotateThreshold = 5;
+    bool EmbeddedFullScreen = false;
 
 public:
     virtual ~iWindowLayer() = default;
@@ -110,7 +112,11 @@ public:
     void SetPosition(tjs_int, tjs_int) {}
     void SetBorderStyle(tTVPBorderStyle) {}
     void SetStayOnTop(bool) {}
-    void SetFullScreenMode(bool) {}
+    void SetFullScreenMode(bool fullscreen) {
+        if(const auto host = TVPGetEmbeddedSessionHost()) {
+            EmbeddedFullScreen = host->set_fullscreen(host->context, this, fullscreen);
+        }
+    }
     tjs_int GetLeft() const { return 0; }
     tjs_int GetTop() const { return 0; }
     tjs_int GetMinWidth() const { return 0; }
@@ -120,7 +126,7 @@ public:
     tjs_int GetInnerWidth() const { return GetWidth(); }
     tjs_int GetInnerHeight() const { return GetHeight(); }
     bool GetStayOnTop() const { return false; }
-    bool GetFullScreenMode() const { return false; }
+    bool GetFullScreenMode() const { return TVPGetEmbeddedSessionHost() && EmbeddedFullScreen; }
     [[nodiscard]] tTVPBorderStyle GetBorderStyle() const { return bsNone; }
     void SetTrapKey(bool b) {}
     [[nodiscard]] bool GetTrapKey() const { return false; }
@@ -359,7 +365,12 @@ public:
 
     const char *GetCaption() override { return _caption.c_str(); }
 
-    void SetCaption(const std::string &s) override { _caption = s; }
+    void SetCaption(const std::string &s) override {
+        if(_caption == s) return;
+        if(const auto host = TVPGetEmbeddedSessionHost())
+            host->set_caption(host->context, this, s);
+        _caption = s;
+    }
 
     void ResetDrawSprite() const;
 

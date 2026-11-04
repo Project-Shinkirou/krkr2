@@ -148,7 +148,7 @@ public:
 
 class iTVPRenderMethod {
 protected:
-    virtual ~iTVPRenderMethod() = default; // undeletable
+    virtual ~iTVPRenderMethod() = default;
     std::string Name;
 
 public:
@@ -205,7 +205,6 @@ namespace TJS {
 }
 class iTVPRenderManager {
 protected:
-    virtual ~iTVPRenderManager() = default; // undeletable
     void RegisterRenderMethod(const char *name, iTVPRenderMethod *method);
     virtual iTVPRenderMethod *GetRenderMethodFromScript(const char *script,
                                                         int nTex,
@@ -215,6 +214,7 @@ protected:
     std::unordered_map<uint32_t, iTVPRenderMethod *> AllMethods;
 
 public:
+    virtual ~iTVPRenderManager();
     void Initialize();
 
 public:
@@ -309,6 +309,8 @@ void TVPRegisterRenderManager(const char *name, iTVPRenderManager *(*func)());
     } __##MGR##AutoReigster_instance;
 
 iTVPRenderManager *TVPGetRenderManager();
+// Release per-context renderer resources before destroying the current GL context.
+void TVPReleaseRenderManagers();
 namespace TJS {
     class tTJSString;
 }

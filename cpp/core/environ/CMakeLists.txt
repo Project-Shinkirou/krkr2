@@ -20,7 +20,7 @@ set(ENVIRON_SOURCE_FILES
 
     $<$<BOOL:${WINDOWS}>:${ENVIRON_PATH}/win32/Platform.cpp>
 
-    $<$<BOOL:${MACOS}>:${ENVIRON_PATH}/apple/macos/platform.mm>
+    $<$<BOOL:${APPLE}>:${ENVIRON_PATH}/apple/macos/platform.mm>
 
     ${ENVIRON_PATH}/cocos2d/AppDelegate.cpp
     ${ENVIRON_PATH}/cocos2d/CCKeyCodeConv.cpp

@@ -12,6 +12,8 @@
 #include <mach/mach_host.h>
 #include <mach/mach_init.h>
 #include <unistd.h>
+#include <TargetConditionals.h>
+#include <stdexcept>
 
 #include <sys/stat.h>
 #include <sys/time.h>
@@ -19,8 +21,10 @@
 
 #import <CoreServices/CoreServices.h>
 #import <Foundation/Foundation.h>
+#if !TARGET_OS_IPHONE
 #import <Cocoa/Cocoa.h>
 #import <AppKit/AppKit.h>
+#endif
 
 #include <cocos2d.h>
 
@@ -28,6 +32,9 @@
 #include "EventIntf.h"
 #include "Platform.h"
 #include "tjsString.h"
+#include "EmbeddedModal.h"
+#include "EmbeddedSession.h"
+#include "Exception.h"
 
 //bool initWindow(cocos2d::GLView* glView) {
 //
@@ -88,7 +95,7 @@ static bool _TVPCreateFolders(const ttstr &folder) {
     if(!TVPCreateFolders(parent))
         return false;
 
-    return !std::filesystem::create_directory(folder.AsStdString().c_str());
+    return std::filesystem::create_directory(folder.AsStdString().c_str());
 }
 
 bool TVPCreateFolders(const ttstr &folder) {
@@ -110,10 +117,6 @@ bool TVPCreateFolders(const ttstr &folder) {
 std::vector<std::string> GetAccessibleDirectories() {
     std::vector<std::string> result;
 
-    // 获取应用程序支持目录
-    CFURLRef appSupportDir = nullptr;
-    FSRef fsRef;
-    char path[PATH_MAX];
 
     // 获取文档目录
     NSArray* paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
@@ -130,12 +133,14 @@ std::vector<std::string> GetAccessibleDirectories() {
 //        if (url) CFRelease(url);
 //    }
 
+#if !TARGET_OS_IPHONE
     // 获取桌面目录
     paths = NSSearchPathForDirectoriesInDomains(NSDesktopDirectory, NSUserDomainMask, YES);
     if (paths && [paths count] > 0) {
         NSString* desktopPath = [paths objectAtIndex:0];
         result.emplace_back([desktopPath UTF8String]);
     }
+#endif
 
     return result;
 }
@@ -143,6 +148,16 @@ std::vector<std::string> GetAccessibleDirectories() {
 std::vector<std::string> TVPGetDriverPath() {
     return GetAccessibleDirectories();
 }
+
+#if TARGET_OS_IPHONE
+const std::vector<std::string> &TVPGetApplicationHomeDirectory() {
+    static const std::vector<std::string> homes = {
+        [NSHomeDirectory() UTF8String],
+        [[[NSBundle mainBundle] bundlePath] UTF8String]
+    };
+    return homes;
+}
+#endif
 
 void TVPGetMemoryInfo(TVPMemoryInfo &m) {
     // 初始化所有字段为0
@@ -212,6 +227,10 @@ bool TVPCheckStartupArg() {
 void TVPControlAdDialog(int, int, int) { /*pass*/ }
 
 void TVPExitApplication(int code) {
+    if(const auto host = TVPGetEmbeddedSessionHost()) {
+        host->request_exit(host->context, code);
+        throw EAbort(TJS_W("embedded session exit"));
+    }
     // clear some static data for memory leak detect
     TVPDeliverCompactEvent(TVP_COMPACT_LEVEL_MAX);
     exit(code);
@@ -335,9 +354,37 @@ void TVPProcessInputEvents() { /* pass */ }
 int TVPShowSimpleInputBox(ttstr &text, const ttstr &caption,
                           const ttstr &prompt,
                           const std::vector<ttstr> &vecButtons) {
-    // TODO
-    spdlog::get("core")->warn("macos platform simple input box not implement");
-    return 0;
+    if(const auto host = TVPGetEmbeddedModalHost())
+        return TVPRequestEmbeddedModal(*host, caption, prompt, vecButtons, &text);
+#if TARGET_OS_IPHONE
+    throw std::runtime_error("SHINKI_EMU_KRKR_NATIVE_MODAL_HOST");
+#else
+    if(![NSThread isMainThread]) {
+        __block int result = -1;
+        dispatch_sync(dispatch_get_main_queue(), ^{
+            result = TVPShowSimpleInputBox(text, caption, prompt, vecButtons);
+        });
+        return result;
+    }
+    NSAlert *alert = [[NSAlert alloc] init];
+    [alert setMessageText:[NSString stringWithUTF8String:caption.AsStdString().c_str()]];
+    [alert setInformativeText:[NSString stringWithUTF8String:prompt.AsStdString().c_str()]];
+    NSTextField *field = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 320, 24)];
+    [field setStringValue:[NSString stringWithUTF8String:text.AsStdString().c_str()]];
+    [alert setAccessoryView:field];
+    for(const auto &button : vecButtons)
+        [alert addButtonWithTitle:[NSString stringWithUTF8String:button.AsStdString().c_str()]];
+    const NSInteger response = [alert runModal] - NSAlertFirstButtonReturn;
+    const int result = response >= 0 && static_cast<size_t>(response) < vecButtons.size()
+        ? static_cast<int>(response) : -1;
+    if(result >= 0)
+        text = ttstr([[field stringValue] UTF8String]);
+#if !__has_feature(objc_arc)
+    [field release];
+    [alert release];
+#endif
+    return result;
+#endif
 }
 
 tjs_uint32 TVPGetRoughTickCount32() {
@@ -375,6 +422,11 @@ tjs_int TVPGetSystemFreeMemory() {
 
 int TVPShowSimpleMessageBox(const ttstr &text, const ttstr &caption,
                             const std::vector<ttstr> &vecButtons) {
+    if(const auto host = TVPGetEmbeddedModalHost())
+        return TVPRequestEmbeddedModal(*host, caption, text, vecButtons, nullptr);
+#if TARGET_OS_IPHONE
+    throw std::runtime_error("SHINKI_EMU_KRKR_NATIVE_MODAL_HOST");
+#else
     // 确保在主线程执行UI操作
     if (![NSThread isMainThread]) {
         __block int result = -1;
@@ -413,6 +465,7 @@ int TVPShowSimpleMessageBox(const ttstr &text, const ttstr &caption,
 
     return -1;
 }
+#endif
 
 extern "C" int TVPShowSimpleMessageBox(const char *pszText, const char *pszTitle,
                             unsigned int nButton, const char **btnText) {
@@ -424,8 +477,12 @@ extern "C" int TVPShowSimpleMessageBox(const char *pszText, const char *pszTitle
 }
 
 std::string TVPGetPackageVersionString() {
+#if TARGET_OS_IPHONE
+    return "ios";
+#else
     return "macos";
 }
+#endif
 
 bool TVP_stat(const char *name, tTVP_stat &s) {
     struct stat t{};

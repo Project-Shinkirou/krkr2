@@ -15,6 +15,7 @@ std::string IndividualConfigManager::GetFilePath() { return CurrentPath; }
 void IndividualConfigManager::Clear() {
     AllConfig.clear();
     CustomArguments.clear();
+    KeyMap.clear();
     ConfigUpdated = false;
     CurrentPath.clear();
 }
@@ -45,8 +46,6 @@ bool IndividualConfigManager::CreatePreferenceAt(const std::string &folder) {
 
 bool IndividualConfigManager::UsePreferenceAt(const std::string &folder) {
     std::string fullpath = folder + "/" FILENAME;
-    if(CurrentPath == fullpath)
-        return true;
     Clear();
     if(!cocos2d::FileUtils::getInstance()->isFileExist(fullpath))
         return false;

@@ -67,5 +67,12 @@ find_package(cocos2dx CONFIG REQUIRED)
 target_link_libraries(${PROJECT_NAME} INTERFACE
     # cocos2d
     cocos2dx::cocos2d
-    $<$<BOOL:${ANDROID}>:$<LINK_LIBRARY:WHOLE_ARCHIVE,cocos2dx::cpp_android_spec>>
 )
+if(ANDROID)
+    if(KRKR2_SHINKI_EMU)
+        target_link_libraries(${PROJECT_NAME} INTERFACE cocos2dx::cpp_android_spec)
+    else()
+        target_link_libraries(${PROJECT_NAME} INTERFACE
+            "$<LINK_LIBRARY:WHOLE_ARCHIVE,cocos2dx::cpp_android_spec>")
+    endif()
+endif()

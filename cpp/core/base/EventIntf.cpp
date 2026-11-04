@@ -188,6 +188,10 @@ static void TVPDestroyEventQueue() {
             delete ev;
         }
     }
+    TVPWinUpdateEventQueue.clear();
+    TVPExclusiveEventPosted = false;
+    TVPEventSequenceNumber = 0;
+    TVPEventSequenceNumberToProcess = 0;
 }
 
 static tTVPAtExit TVPDestroyEventQueueAtExit(TVP_ATEXIT_PRI_PREPARE,
@@ -207,6 +211,9 @@ bool TVPEventInterrupting = false;
 void TVPPostEvent(iTJSDispatch2 *source, iTJSDispatch2 *target,
                   ttstr &eventname, tjs_uint32 tag, tjs_uint32 flag,
                   tjs_uint numargs, tTJSVariant *args) {
+    // Teardown invalidates every receiver. Destructors must not publish work
+    // into the next session after the initial queue-drain phase.
+    if(TVPSystemUninitCalled) return;
     bool evdisabled = TVPEventDisabled || TVPGetSystemEventDisabledState();
 
     if((flag & TVP_EPT_DISCARDABLE) && (TVPEventInterrupting || evdisabled))
@@ -556,6 +563,7 @@ void TVPDeliverAllEvents() {
 bool TVPWindowUpdateEventsDelivering = false;
 
 void TVPPostWindowUpdate(tTJSNI_BaseWindow *window) {
+    if(TVPSystemUninitCalled) return;
 
     if(!TVPWindowUpdateEventsDelivering) {
         if(TVPWinUpdateEventQueue.size()) {
@@ -640,6 +648,10 @@ tjs_int TVPInputEventTagMax = 0;
 // TVPPostInputEvent
 //---------------------------------------------------------------------------
 void TVPPostInputEvent(tTVPBaseInputEvent *ev, tjs_uint32 flags) {
+    if(TVPSystemUninitCalled) {
+        delete ev;
+        return;
+    }
     // flag check
     if((flags & TVP_EPT_DISCARDABLE) &&
        (TVPEventDisabled || TVPGetSystemEventDisabledState())) {
@@ -755,6 +767,10 @@ static void TVPDestroyContinuousHandlerVector() {
         i->Release();
     }
     TVPContinuousHandlerVector.clear();
+    TVPContinuousEventVector.clear();
+    TVPEventDisabled = false;
+    TVPEventInterrupting = false;
+    TVPProcessContinuousHandlerEventFlag = false;
 }
 
 static tTVPAtExit

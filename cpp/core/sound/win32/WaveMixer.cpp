@@ -1,5 +1,6 @@
 #include "WaveMixer.h"
 #include "tjsCommHead.h"
+#include <stdexcept>
 
 #ifdef __APPLE__
 #include <OpenAL/al.h>
@@ -249,6 +250,7 @@ public:
     }
 
     virtual ~iTVPAudioRenderer() = default;
+    bool HasStreams() const { return !_streams.empty(); }
 
     void InitMixer() {}
 
@@ -734,7 +736,10 @@ static iTVPAudioRenderer *CreateAudioRenderer() {
     delete renderer;
 #endif
     renderer = new tTVPAudioRendererAL;
-    renderer->Init();
+    if(!renderer->Init()) {
+        delete renderer;
+        throw std::runtime_error("KrKr2 audio playback initialization failed");
+    }
     return renderer;
 }
 
@@ -765,3 +770,10 @@ void TVPALSoundWrap::SetSampleOffset(tjs_uint n /*= 0*/) {
     _samplesProcessed = n;
 }
 #endif
+
+void TVPReleaseAudioRenderer() {
+    if(!TVPAudioRenderer) return;
+    if(TVPAudioRenderer->HasStreams()) throw std::runtime_error("KrKr2 audio renderer still owns streams");
+    delete TVPAudioRenderer;
+    TVPAudioRenderer = nullptr;
+}

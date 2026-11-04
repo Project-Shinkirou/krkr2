@@ -11,13 +11,14 @@
 #define GL_UNPACK_ROW_LENGTH 0x0CF2
 #endif
 
-#if TARGET_OS_MAC
-#include <OpenGL/gl.h>
-#endif
-
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
 #if TARGET_OS_IPHONE
 #include <OpenGLES/ES2/gl.h>
 #include <OpenGLES/ES2/glext.h>
+#else
+#include <OpenGL/gl.h>
+#endif
 #endif
 
 #ifdef __ANDROID__

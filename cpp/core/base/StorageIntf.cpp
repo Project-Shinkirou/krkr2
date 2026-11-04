@@ -1228,6 +1228,14 @@ void TVPClearStorageCaches() {
     TVPClearXP3SegmentCache();
     TVPClearAutoPathCache();
 }
+
+static void TVPReleaseSessionStorage() {
+    TVPClearStorageCaches();
+    TVPAutoPathList.clear();
+    TVPArchiveDelimiter = '>';
+}
+static tTVPAtExit TVPReleaseSessionStorageAtExit(
+    TVP_ATEXIT_PRI_SHUTDOWN, TVPReleaseSessionStorage);
 //---------------------------------------------------------------------------
 
 void TVPRemoveFromStorageCache(const ttstr &name) {

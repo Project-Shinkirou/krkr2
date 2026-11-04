@@ -471,6 +471,8 @@ void TVPWindowLayer::SetHeight(tjs_int h) {
 void TVPWindowLayer::UpdateDrawBuffer(iTVPTexture2D *tex) {
     if(!tex)
         return;
+    if(const auto host = TVPGetEmbeddedSessionHost())
+        host->frame_ready(host->context, tjsNativeInstance, tex, LayerWidth, LayerHeight);
     cocos2d::Texture2D *tex2d = DrawSprite->getTexture();
     cocos2d::Texture2D *newtex = tex->GetAdapterTexture(tex2d);
     if(tex2d != newtex) {

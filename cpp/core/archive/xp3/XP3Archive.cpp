@@ -182,15 +182,16 @@ static void TVPShutdownArchiveHandleCache() {
     // free all stream and shutdown the pool
     tTJSCriticalSectionHolder cs_holder(TVPArchiveHandleCacheCS);
 
-    TVPArchiveHandleCacheShutdown = true;
-    if(!TVPArchiveHandleCacheInit)
-        return;
+    if(!TVPArchiveHandleCacheInit) return;
 
     for(tjs_int i = 0; i < TVP_MAX_ARCHIVE_HANDLE_CACHE; i++) {
         if(TVPArchiveHandleCachePool[i].Stream)
             delete TVPArchiveHandleCachePool[i].Stream;
     }
     delete[] TVPArchiveHandleCachePool;
+    TVPArchiveHandleCachePool = nullptr;
+    TVPArchiveHandleCacheInit = false;
+    TVPArchiveHandleCacheShutdown = false;
 }
 
 //---------------------------------------------------------------------------

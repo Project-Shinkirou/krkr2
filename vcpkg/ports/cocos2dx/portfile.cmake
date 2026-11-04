@@ -32,6 +32,7 @@ vcpkg_extract_source_archive(
         patch/fix-win64.patch
         patch/fix-bullet-spell.patch
         patch/fix-chipmunk.patch
+        patch/fix-android-jni-lifetime.patch
 )
 
 file(COPY "${CMAKE_CURRENT_LIST_DIR}/cocos2dx-config.cmake.in" DESTINATION "${SOURCE_PATH}")
@@ -41,6 +42,8 @@ file(COPY_FILE "${CMAKE_CURRENT_LIST_DIR}/patch/cocos2d-x/cocos/CMakeLists.txt" 
 
 file(COPY_FILE "${CMAKE_CURRENT_LIST_DIR}/patch/cocos2d-x/cmake/Modules/CocosBuildHelpers.cmake" "${SOURCE_PATH}/cmake/Modules/CocosBuildHelpers.cmake" ONLY_IF_DIFFERENT)
 file(COPY_FILE "${CMAKE_CURRENT_LIST_DIR}/patch/cocos2d-x/cmake/Modules/CocosConfigDepend.cmake" "${SOURCE_PATH}/cmake/Modules/CocosConfigDepend.cmake" ONLY_IF_DIFFERENT)
+file(COPY_FILE "${CMAKE_CURRENT_LIST_DIR}/patch/cocos2d-x/cmake/Modules/CocosConfigDefine.cmake" "${SOURCE_PATH}/cmake/Modules/CocosConfigDefine.cmake" ONLY_IF_DIFFERENT)
+file(COPY_FILE "${CMAKE_CURRENT_LIST_DIR}/patch/cocos2d-x/cocos/base/pvr.h" "${SOURCE_PATH}/cocos/base/pvr.h" ONLY_IF_DIFFERENT)
 
 include("${CMAKE_CURRENT_LIST_DIR}/DownloadDeps.cmake")
 

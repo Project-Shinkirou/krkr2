@@ -1,0 +1,34 @@
+[package]
+name = "shinki-emu-krkr2"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT OR Apache-2.0"
+publish = false
+build = "build.rs"
+
+[features]
+default = []
+static = []
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+shinki-emu-abi = { git = "https://github.com/Project-Shinkirou/ShinkiEMU", rev = "ed97c39ef939512fe565c2a5dbd8605cb7233daa" }
+
+[build-dependencies]
+shinki-emu-build = { git = "https://github.com/Project-Shinkirou/ShinkiEMU", rev = "ed97c39ef939512fe565c2a5dbd8605cb7233daa" }
+serde_json = "1"
+shlex = "1"
+flate2 = "=1.1.10"
+tar = "0.4.46"
+sha2 = "0.11.1"
+
+[workspace]
+
+[package.metadata.shinki]
+upstream = "https://github.com/2468785842/krkr2"
+upstream_revision = "dca7264572a63e753c1b07ca7053513d1751ce70"
+hosted_fork = "https://github.com/Project-Shinkirou/krkr2"
+hosted_fork_branch = "shinki"

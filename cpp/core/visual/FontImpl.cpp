@@ -6,6 +6,7 @@
 #include "StorageIntf.h"
 #include "DebugIntf.h"
 #include "MsgIntf.h"
+#include "SysInitIntf.h"
 #include <map>
 #include <cmath>
 #include "Application.h"
@@ -21,6 +22,7 @@
 
 tTJSHashTable<ttstr, TVPFontNamePathInfo, tTVPttstrHash> TVPFontNames;
 static ttstr TVPDefaultFontName;
+static bool TVPFontNamesInit = false;
 const ttstr &TVPGetDefaultFontName() { return TVPDefaultFontName; }
 void TVPGetAllFontList(std::vector<ttstr> &list) {
     auto itend = TVPFontNames.GetLast();
@@ -48,8 +50,14 @@ const FT_Library TVPGetFontLibrary() {
 void TVPReleaseFontLibrary() {
     if(TVPFontLibrary) {
         FT_Done_FreeType(TVPFontLibrary);
+        TVPFontLibrary = nullptr;
     }
+    TVPFontNames.Clear();
+    TVPDefaultFontName.Clear();
+    TVPFontNamesInit = false;
 }
+static tTVPAtExit TVPReleaseFontLibraryAtExit(
+    TVP_ATEXIT_PRI_RELEASE + 100, TVPReleaseFontLibrary);
 //---------------------------------------------------------------------------
 static int TVPInternalEnumFonts(
     FT_Byte *pBuf, int buflen, const ttstr &FontPath,
@@ -176,7 +184,6 @@ extern ttstr Android_GetInternalStoragePath();
 extern ttstr Android_GetApkStoragePath();
 #endif
 void TVPInitFontNames() {
-    static bool TVPFontNamesInit = false;
     // enumlate all fonts
     if(TVPFontNamesInit)
         return;
@@ -222,8 +229,7 @@ void TVPInitFontNames() {
             auto data = cocos2d::FileUtils::getInstance()->getDataFromFile(
                 "NotoSansCJK-Regular.ttc");
             if(data.isNull()) {
-                spdlog::critical("can't found internal font file!");
-                exit(-1);
+                TVPThrowExceptionMessage(TJS_W("Missing native resource DroidSansFallback.ttf"));
             }
             if(TVPInternalEnumFonts(
                    data.getBytes(), data.getSize(), "NotoSansCJK-Regular.ttc",

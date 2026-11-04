@@ -31,6 +31,8 @@
 #include "EventIntf.h"
 #include "RenderManager.h"
 #include <sys/stat.h>
+#include "EmbeddedSession.h"
+#include "Exception.h"
 
 USING_NS_CC;
 
@@ -151,8 +153,13 @@ std::string TVPGetDeviceID() {
     // 	if (ret.empty())
     {
         JniMethodInfo methodInfo;
+#if defined(KRKR2_SHINKI_EMU)
+        constexpr const char *deviceIdMethod = "getAndroidDeviceId";
+#else
+        constexpr const char *deviceIdMethod = "getDeviceId";
+#endif
         if(JniHelper::getStaticMethodInfo(methodInfo, KR2ActJavaPath,
-                                          "getDeviceId",
+                                          deviceIdMethod,
                                           "()Ljava/lang/String;")) {
             auto result = (jstring)methodInfo.env->CallStaticObjectMethod(
                 methodInfo.classID, methodInfo.methodID);
@@ -514,6 +521,12 @@ using namespace kr2android;
 
 int TVPShowSimpleMessageBox(const char *pszText, const char *pszTitle,
                             unsigned int nButton, const char **btnText) {
+    if(const auto host = TVPGetEmbeddedModalHost()) {
+        std::vector<ttstr> buttons;
+        buttons.reserve(nButton);
+        for(unsigned int i = 0; i < nButton; ++i) buttons.emplace_back(btnText[i]);
+        return TVPRequestEmbeddedModal(*host, ttstr(pszTitle), ttstr(pszText), buttons, nullptr);
+    }
     JniMethodInfo methodInfo;
     if(JniHelper::getStaticMethodInfo(
            methodInfo, "org/tvp/kirikiri2/KR2Activity", "ShowMessageBox",
@@ -569,6 +582,8 @@ int TVPShowSimpleMessageBox(const ttstr &text, const ttstr &caption,
 int TVPShowSimpleInputBox(ttstr &text, const ttstr &caption,
                           const ttstr &prompt,
                           const std::vector<ttstr> &vecButtons) {
+    if(const auto host = TVPGetEmbeddedModalHost())
+        return TVPRequestEmbeddedModal(*host, caption, prompt, vecButtons, &text);
     JniMethodInfo methodInfo;
     if(JniHelper::getStaticMethodInfo(
            methodInfo, "org/tvp/kirikiri2/KR2Activity", "ShowInputBox",
@@ -902,6 +917,13 @@ std::string TVPGetCurrentLanguage() {
 }
 
 void TVPExitApplication(int code) {
+    if(const auto host = TVPGetEmbeddedSessionHost()) {
+        host->request_exit(host->context, code);
+        throw EAbort(TJS_W("embedded session exit"));
+    }
+#if defined(KRKR2_SHINKI_EMU)
+    throw EAbort(TJS_W("embedded session owner unavailable"));
+#else
     TVPDeliverCompactEvent(TVP_COMPACT_LEVEL_MAX);
     if(!TVPIsSoftwareRenderManager())
         iTVPTexture2D::RecycleProcess();
@@ -912,6 +934,7 @@ void TVPExitApplication(int code) {
         t.env->DeleteLocalRef(t.classID);
     }
     exit(code);
+#endif
 }
 
 void TVPHideIME() {

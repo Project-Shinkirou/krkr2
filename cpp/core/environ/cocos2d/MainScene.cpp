@@ -1,4 +1,5 @@
 #include "MainScene.h"
+#include "../EmbeddedSession.h"
 
 #include <cocos2d.h>
 #include <cocos-ext.h>
@@ -424,6 +425,20 @@ public:
 
 static TVPMainScene *_instance = nullptr;
 
+TVPMainScene::~TVPMainScene() {
+    if(_instance == this) _instance = nullptr;
+    TVPWindowLayer::_lastWindowLayer = TVPWindowLayer::_currentWindowLayer = nullptr;
+    TVPWindowLayer::_windowMgrOverlay = nullptr;
+    TVPWindowLayer::_consoleWin = nullptr;
+    TVPWindowLayer::_mouseCursor = nullptr;
+    _fpsLabel = nullptr;
+    _mouseTouches.clear();
+    TVPWindowLayer::_virutalMouseMode = _mouseMoved = _mouseClickedDown = false;
+    std::fill(std::begin(TVPWindowLayer::_scancode), std::end(TVPWindowLayer::_scancode), 0);
+    _postUpdate = nullptr;
+    _func_mask_layer_touchbegan = {};
+}
+
 TVPMainScene *TVPMainScene::GetInstance() { return _instance; }
 
 TVPMainScene *TVPMainScene::CreateInstance() {
@@ -508,7 +523,9 @@ void TVPMainScene::pushUIForm(cocos2d::Node *ui, eEnterAni ani) {
         CCLOGERROR("TVPMainScene::pushUIForm: ui is nullptr");
         return;
     }
+#if !defined(KRKR2_SHINKI_EMU)
     TVPControlAdDialog(0x10002, 1, 0);
+#endif
     int n = UINode->getChildrenCount();
     if(ani == eEnterAniNone) {
         UINode->addChild(ui);
@@ -548,9 +565,11 @@ void TVPMainScene::popUIForm(cocos2d::Node *form, eLeaveAni ani) {
     int n = UINode->getChildrenCount();
     if(n <= 0)
         return;
+#if !defined(KRKR2_SHINKI_EMU)
     if(n == 1) {
         TVPControlAdDialog(0x10002, 0, 0);
     }
+#endif
     auto children = UINode->getChildren();
     if(ani == eLeaveAniNone) {
         if(n > 1) {
@@ -662,9 +681,11 @@ void TVPMainScene::doStartup(float dt, std::string path) {
         scheduleUpdate();
 
         cocos2d::Director::getInstance()->purgeCachedData();
+#if !defined(KRKR2_SHINKI_EMU)
         TVPControlAdDialog(0x10002, 0,
                            0); // ensure to close banner ad
     }
+#endif
 
     TVPWindowLayer *pWin = TVPWindowLayer::_lastWindowLayer;
     while(pWin) {
@@ -797,7 +818,7 @@ static float _getUIScale() {
 }
 
 float TVPMainScene::getUIScale() {
-    static float uiscale = _getUIScale();
+    static thread_local float uiscale = _getUIScale();
     return uiscale;
 }
 
@@ -949,7 +970,9 @@ void TVPMainScene::showWindowManagerOverlay(bool bVisible) {
 }
 
 void TVPMainScene::popAllUIForm() {
+#if !defined(KRKR2_SHINKI_EMU)
     TVPControlAdDialog(0x10002, 0, 0);
+#endif
     auto children = UINode->getChildren();
     for(auto ui : children) {
         cocos2d::Size size = getContentSize();
@@ -1322,7 +1345,7 @@ void TVPRemoveWindowLayer(iWindowLayer *lay) {
 }
 
 void TVPConsoleLog(const ttstr &l, bool important) {
-    static bool TVPLoggingToConsole =
+    static thread_local bool TVPLoggingToConsole =
         IndividualConfigManager::GetInstance()->GetValue<bool>("outputlog",
                                                                true);
     if(!TVPLoggingToConsole)
@@ -1375,7 +1398,7 @@ static std::string _TVPGetInternalPreferencePath() {
 }
 
 const std::string &TVPGetInternalPreferencePath() {
-    static std::string ret = _TVPGetInternalPreferencePath();
+    static thread_local std::string ret = _TVPGetInternalPreferencePath();
     return ret;
 }
 
@@ -1427,3 +1450,43 @@ ttstr TVPGetPlatformName() {
 }
 
 ttstr TVPGetOSName() { return TVPGetPlatformName(); }
+
+tTJSNI_Window *TVPGetCurrentWindowNative() { return TVPWindowLayer::TVPGetActiveWindow(); }
+void TVPDispatchWindowKey(unsigned int code, bool pressed) {
+    if(!code || code >= std::size(_keymap)) return;
+    code = _keymap[code];
+    auto window = TVPWindowLayer::_currentWindowLayer;
+    auto &scan = TVPWindowLayer::_scancode[code];
+    if(pressed) {
+        scan = 0x11;
+        if(window) window->InternalKeyDown(code, TVPGetCurrentShiftKeyState());
+    } else {
+        const bool held = scan & 1;
+        scan &= 0x10;
+        if(held && window) window->OnKeyUp(code, TVPGetCurrentShiftKeyState());
+    }
+}
+void TVPDispatchWindowPointerMove(float x, float y) {
+    if(auto window = TVPWindowLayer::TVPGetActiveWindow())
+        TVPPostInputEvent(new tTVPOnMouseMoveInputEvent(window, static_cast<int>(x), static_cast<int>(y), TVPGetCurrentShiftKeyState()), TVP_EPT_DISCARDABLE);
+}
+void TVPDispatchWindowPointerButton(int button, bool pressed, float x, float y) {
+    auto window = TVPWindowLayer::TVPGetActiveWindow();
+    if(!window || button < mbLeft || button > mbX2) return;
+    const auto mouse = static_cast<tTVPMouseButton>(button);
+    auto &scan = TVPWindowLayer::_scancode[TVPConvertMouseBtnToVKCode(mouse)];
+    if(pressed) {
+        scan = 0x11;
+        TVPPostInputEvent(new tTVPOnMouseDownInputEvent(window, static_cast<int>(x), static_cast<int>(y), mouse, TVPGetCurrentShiftKeyState()));
+    } else {
+        const bool held = scan & 1;
+        scan &= 0x10;
+        if(held && mouse == mbLeft)
+            TVPPostInputEvent(new tTVPOnClickInputEvent(window, static_cast<int>(x), static_cast<int>(y)));
+        TVPPostInputEvent(new tTVPOnMouseUpInputEvent(window, static_cast<int>(x), static_cast<int>(y), mouse, TVPGetCurrentShiftKeyState()));
+    }
+}
+void TVPDispatchWindowWheel(int delta, float x, float y) {
+    if(auto window = TVPWindowLayer::TVPGetActiveWindow())
+        window->OnMouseWheel(TVPGetCurrentShiftKeyState(), delta, static_cast<int>(x), static_cast<int>(y));
+}

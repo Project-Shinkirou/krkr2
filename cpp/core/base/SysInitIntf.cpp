@@ -18,6 +18,10 @@
 #include "SysInitIntf.h"
 #include "ScriptMgnIntf.h"
 #include "tvpgl.h"
+#include <exception>
+#include "ncbind.hpp"
+#include "tjsExecutionControl.h"
+#include "ThreadImpl.h"
 
 //---------------------------------------------------------------------------
 // global data
@@ -59,7 +63,7 @@ void TVPSystemInit() {
 //---------------------------------------------------------------------------
 // TVPSystemUninit : System shutdown, cleanup, etc...
 //---------------------------------------------------------------------------
-static void TVPCauseAtExit();
+static void TVPCauseAtExit(tjs_int first, tjs_int last);
 
 bool TVPSystemUninitCalled = false;
 
@@ -68,19 +72,20 @@ void TVPSystemUninit() {
         return;
     TVPSystemUninitCalled = true;
 
-    TVPBeforeSystemUninit();
-
-    TVPUninitTVPGL();
-
-    try {
-        TVPUninitScriptEngine();
-    } catch(...) {
-        // ignore errors
-    }
-
-    TVPAfterSystemUninit();
-
-    TVPCauseAtExit();
+    std::exception_ptr failure;
+    const auto cleanup = [&](auto call) {
+        try { call(); } catch(...) { if(!failure) failure = std::current_exception(); }
+    };
+    cleanup([] { TVPBeforeSystemUninit(); });
+    // Stop producers and release queued script closures before destroying the VM.
+    cleanup([] { TVPCauseAtExit(0, TVP_ATEXIT_PRI_RELEASE); });
+    cleanup([] { ncbAutoRegister::EndSession(); });
+    cleanup([] { TVPThrowWorkerFailure(); });
+    cleanup([] { TVPUninitScriptEngine(); });
+    cleanup([] { TVPUninitTVPGL(); });
+    cleanup([] { TVPAfterSystemUninit(); });
+    cleanup([] { TVPCauseAtExit(TVP_ATEXIT_PRI_RELEASE, 0x7fffffff); });
+    if(failure) std::rethrow_exception(failure);
 }
 //---------------------------------------------------------------------------
 
@@ -110,31 +115,32 @@ struct tTVPAtExitInfo {
 };
 
 static std::vector<tTVPAtExitInfo> *TVPAtExitInfos = nullptr;
-static bool TVPAtExitShutdown = false;
+void TVPBeginSystemSession() {
+    // Called before any VM/configuration initialization, after the previous
+    // session has joined its producers and released its application.
+    TVPSystemUninitCalled = false;
+}
 
 //---------------------------------------------------------------------------
 void TVPAddAtExitHandler(tjs_int pri, void (*handler)()) {
-    if(TVPAtExitShutdown)
-        return;
-
     if(!TVPAtExitInfos)
         TVPAtExitInfos = new std::vector<tTVPAtExitInfo>();
     TVPAtExitInfos->emplace_back(pri, handler);
 }
 
 //---------------------------------------------------------------------------
-static void TVPCauseAtExit() {
-    if(TVPAtExitShutdown)
-        return;
-    TVPAtExitShutdown = true;
-
-    std::sort(TVPAtExitInfos->begin(),
-              TVPAtExitInfos->end()); // descending sort
-
-    for(auto i = TVPAtExitInfos->begin(); i != TVPAtExitInfos->end(); ++i) {
-        i->Handler();
+static void TVPCauseAtExit(tjs_int first, tjs_int last) {
+    if(!TVPAtExitInfos) return;
+    // Registrars are static objects. Keep the registry across sessions; deleting
+    // it loses every callback permanently and leaves a dangling global pointer.
+    std::stable_sort(TVPAtExitInfos->begin(), TVPAtExitInfos->end());
+    std::exception_ptr failure;
+    for(const auto &entry : *TVPAtExitInfos) {
+        if(entry.Priority < first || entry.Priority >= last) continue;
+        try { entry.Handler(); } catch(...) {
+            if(!failure) failure = std::current_exception();
+        }
     }
-
-    delete TVPAtExitInfos;
+    if(failure) std::rethrow_exception(failure);
 }
 //---------------------------------------------------------------------------

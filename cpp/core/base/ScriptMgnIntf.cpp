@@ -10,6 +10,7 @@
 //---------------------------------------------------------------------------
 
 #include "tjsCommHead.h"
+#include <exception>
 
 #include "tjs.h"
 #include "tjsDebug.h"
@@ -397,6 +398,16 @@ void TVPInitScriptEngine() {
     if(TVPScriptEngineInit)
         return;
     TVPScriptEngineInit = true;
+    TVPStartupScriptName = TJS_W("startup.tjs");
+    TJSEvalOperatorIsOnGlobal = false;
+    TJSWarnOnNonGlobalEvalOperator = false;
+    TJSUnaryAsteriskIgnoresPropAccess = false;
+    TJSWarnOnExecutionOnDeletingObject = false;
+#ifdef _DEBUG
+    TJSEnableDebugMode = true;
+#else
+    TJSEnableDebugMode = false;
+#endif
 
     tTJSVariant val;
 
@@ -552,20 +563,24 @@ void TVPInitScriptEngine() {
 //---------------------------------------------------------------------------
 // TVPUninitScriptEngine
 //---------------------------------------------------------------------------
-static bool TVPScriptEngineUninit = false;
 
 void TVPUninitScriptEngine() {
-    if(TVPScriptEngineUninit)
+    if(!TVPScriptEngine) {
+        TVPScriptEngineInit = false;
         return;
-    TVPScriptEngineUninit = true;
-
-    // TVPScriptEngine->Shutdown();
-    TVPScriptEngine->Release();
-    /*
-        Objects, theirs lives are contolled by reference counter, may
-       not be all freed here in some occations.
-    */
+    }
+    TVPRemoveCompactEventHook(&TVPTJSGCCallback);
+    // Cancellation can interrupt a script finalizer. Still release the VM and
+    // its global references; preserve every failure other than intentional abort.
+    std::exception_ptr failure;
+    try { TVPScriptEngine->Shutdown(); }
+    catch(const TJS::eTJSSilent &) {}
+    catch(...) { failure = std::current_exception(); }
+    auto engine = TVPScriptEngine;
     TVPScriptEngine = nullptr;
+    TVPScriptEngineInit = false;
+    engine->Release();
+    if(failure) std::rethrow_exception(failure);
 }
 //---------------------------------------------------------------------------
 

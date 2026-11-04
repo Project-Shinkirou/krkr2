@@ -1510,11 +1510,10 @@ tTVPWaveSoundBufferThread::tTVPWaveSoundBufferThread() :
 //---------------------------------------------------------------------------
 tTVPWaveSoundBufferThread::~tTVPWaveSoundBufferThread() {
     SetPriority(ttpNormal);
-    Resume();
+    Terminate();
     Event.Set();
     WaitFor();
     EventQueue.Deallocate();
-    Terminate();
 }
 
 //---------------------------------------------------------------------------
@@ -1781,7 +1780,7 @@ class tTVPWaveSoundBufferDecodeThread : public tTVPThread {
     tTJSNI_WaveSoundBuffer *Owner;
     tTVPThreadEvent Event;
     tTJSCriticalSection OneLoopCS;
-    volatile bool Running;
+    std::atomic<bool> Running{false};
 
 public:
     tTVPWaveSoundBufferDecodeThread(tTJSNI_WaveSoundBuffer *owner);

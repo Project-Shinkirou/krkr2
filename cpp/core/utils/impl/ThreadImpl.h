@@ -15,12 +15,16 @@
 #include "ThreadIntf.h"
 #include <condition_variable>
 #include <thread>
+#include <atomic>
+#include <exception>
+void TVPRecordWorkerFailure(std::exception_ptr failure);
+void TVPThrowWorkerFailure();
 
 //---------------------------------------------------------------------------
 // tTVPThread
 //---------------------------------------------------------------------------
 class tTVPThread {
-    bool Terminated;
+    std::atomic<bool> Terminated{false};
     std::thread Handle;
     // DWORD ThreadId;
     std::mutex _mutex; // for suspend
@@ -38,7 +42,7 @@ public:
 
     void SetTerminated(bool s) { Terminated = s; }
 
-    void Terminate() { Terminated = true; }
+    void Terminate() { Terminated = true; Resume(); }
 
 protected:
     virtual void Execute() = 0;

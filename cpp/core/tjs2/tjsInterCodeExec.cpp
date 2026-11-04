@@ -12,6 +12,7 @@
 #include "tjsCommHead.h"
 
 #include "tjsInterCodeExec.h"
+#include "tjsExecutionControl.h"
 #include "tjsInterCodeGen.h"
 #include "tjsScriptBlock.h"
 #include "tjsError.h"
@@ -865,8 +866,11 @@ namespace TJS {
             tTJSVariant *da = DataArea;
 
             bool flag = false;
+            unsigned int cancellationBudget = 0;
 
             while(true) {
+                if((cancellationBudget++ & 1023u) == 0)
+                    TJSCheckExecutionCancellation();
                 codesave = code;
                 switch(*code) {
                     case VM_NOP:

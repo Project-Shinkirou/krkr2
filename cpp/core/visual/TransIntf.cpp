@@ -348,6 +348,7 @@ iTVPTransHandlerProvider *TVPFindTransHandlerProvider(const ttstr &name) {
 static void TVPClearTransHandlerProvider() {
     // called at system shutdown
     TVPTransHandlerProviders.Clear();
+    TVPTransHandlerProviderInit = true;
 }
 static tTVPAtExit
     TVPClearTransHandlerProviderAtExit(TVP_ATEXIT_PRI_SHUTDOWN,
@@ -666,21 +667,18 @@ void tTVPCrossFadeTransHandler::Blend(tTVPDivisibleData *data) {
     iTVPRenderMethod *method;
     int opa_id;
     if(TVPIsTypeUsingAlpha(DestLayerType)) {
-        static iTVPRenderMethod *_method =
-            TVPGetRenderManager()->GetRenderMethod("ConstAlphaBlend_SD_d");
-        static int _opa_id = _method->EnumParameterID("opacity");
+        static thread_local iTVPRenderMethod *_method = TVPGetRenderManager()->GetRenderMethod("ConstAlphaBlend_SD_d");
+        static thread_local int _opa_id = _method->EnumParameterID("opacity");
         method = _method;
         opa_id = _opa_id;
     } else if(TVPIsTypeUsingAddAlpha(DestLayerType)) {
-        static iTVPRenderMethod *_method =
-            TVPGetRenderManager()->GetRenderMethod("ConstAlphaBlend_SD_a");
-        static int _opa_id = _method->EnumParameterID("opacity");
+        static thread_local iTVPRenderMethod *_method = TVPGetRenderManager()->GetRenderMethod("ConstAlphaBlend_SD_a");
+        static thread_local int _opa_id = _method->EnumParameterID("opacity");
         method = _method;
         opa_id = _opa_id;
     } else {
-        static iTVPRenderMethod *_method =
-            TVPGetRenderManager()->GetRenderMethod("ConstAlphaBlend_SD");
-        static int _opa_id = _method->EnumParameterID("opacity");
+        static thread_local iTVPRenderMethod *_method = TVPGetRenderManager()->GetRenderMethod("ConstAlphaBlend_SD");
+        static thread_local int _opa_id = _method->EnumParameterID("opacity");
         method = _method;
         opa_id = _opa_id;
     }
@@ -735,26 +733,20 @@ public:
         Rule->AddRef();
 
         if(TVPIsTypeUsingAlpha(DestLayerType)) {
-            static iTVPRenderMethod *_method =
-                TVPGetRenderManager()->GetRenderMethod("UnivTransBlend_d");
-            static int phase_id = _method->EnumParameterID("phase"),
-                       vague_id = _method->EnumParameterID("vague");
+            static thread_local iTVPRenderMethod *_method = TVPGetRenderManager()->GetRenderMethod("UnivTransBlend_d");
+            static thread_local int phase_id = _method->EnumParameterID("phase"), vague_id = _method->EnumParameterID("vague");
             Method = _method;
             MethodPhaseID = phase_id;
             MethodVagueID = vague_id;
         } else if(TVPIsTypeUsingAddAlpha(DestLayerType)) {
-            static iTVPRenderMethod *_method =
-                TVPGetRenderManager()->GetRenderMethod("UnivTransBlend_a");
-            static int phase_id = _method->EnumParameterID("phase"),
-                       vague_id = _method->EnumParameterID("vague");
+            static thread_local iTVPRenderMethod *_method = TVPGetRenderManager()->GetRenderMethod("UnivTransBlend_a");
+            static thread_local int phase_id = _method->EnumParameterID("phase"), vague_id = _method->EnumParameterID("vague");
             Method = _method;
             MethodPhaseID = phase_id;
             MethodVagueID = vague_id;
         } else {
-            static iTVPRenderMethod *_method =
-                TVPGetRenderManager()->GetRenderMethod("UnivTransBlend");
-            static int phase_id = _method->EnumParameterID("phase"),
-                       vague_id = _method->EnumParameterID("vague");
+            static thread_local iTVPRenderMethod *_method = TVPGetRenderManager()->GetRenderMethod("UnivTransBlend");
+            static thread_local int phase_id = _method->EnumParameterID("phase"), vague_id = _method->EnumParameterID("vague");
             Method = _method;
             MethodPhaseID = phase_id;
             MethodVagueID = vague_id;
@@ -1010,8 +1002,7 @@ static void TVPSLPCopyRect(iTVPScanLineProvider *destimg, tjs_int x, tjs_int y,
 		dest += destpitch, src += srcpitch;
 	}
 #endif
-    static iTVPRenderMethod *method =
-        TVPGetRenderManager()->GetRenderMethod("Copy");
+    static thread_local iTVPRenderMethod *method = TVPGetRenderManager()->GetRenderMethod("Copy");
 
     tRenderTexRectArray::Element src_tex[] = { tRenderTexRectArray::Element(
         srcimg->GetTexture(), srcrect) };

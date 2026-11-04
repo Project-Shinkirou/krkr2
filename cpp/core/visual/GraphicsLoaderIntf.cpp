@@ -12,6 +12,9 @@
 #include "tjsCommHead.h"
 
 #include <stdlib.h>
+#include <atomic>
+#include <exception>
+#include <memory>
 #include "GraphicsLoaderIntf.h"
 #include "LayerBitmapIntf.h"
 #include "LayerIntf.h"
@@ -2013,77 +2016,77 @@ public:
     };
 
     static TVPGraphicPreload *Instance() {
-        static TVPGraphicPreload *instance;
-        if(!instance)
-            instance = new TVPGraphicPreload;
-        return instance;
+        if(!instance_) instance_ = new TVPGraphicPreload;
+        return instance_;
     }
-
-    void addTask(tParam *param) { // called from main thread
+    static void Shutdown() {
+        std::unique_ptr<TVPGraphicPreload> owner(instance_);
+        instance_ = nullptr;
+        if(!owner) return;
+        owner->stop();
+        if(owner->Failure) std::rethrow_exception(owner->Failure);
+    }
+    ~TVPGraphicPreload() { stop(); }
+    void addTask(tParam *param) {
+        std::unique_ptr<tParam> owner(param);
         {
-            tTJSCSH lock(CSTask);
-            ReqInterrupt = true;
-            clearTask(); // drop all unfinished tasks
-            TaskList.emplace_back(param);
+            std::lock_guard<std::mutex> lock(TaskMutex);
+            if(Failure) std::rethrow_exception(Failure);
+            ReqInterrupt.store(true);
+            clearTask();
+            TaskList.push_back(owner.get());
+            owner.release();
         }
         TaskCond.notify_one();
     }
 
 private:
+    inline static TVPGraphicPreload *instance_ = nullptr;
     std::list<tParam *> TaskList;
     std::condition_variable TaskCond;
     std::mutex TaskMutex;
-    tTJSCriticalSection CSTask;
-    bool ReqInterrupt;
-
-    std::thread *ThreadID;
-    TVPGraphicPreload() {
-        //         TaskCond = SDL_CreateCond();
-        //         TaskMutex = SDL_CreateMutex();
-        ThreadID =
-            new std::thread(std::bind(&TVPGraphicPreload::_thread_loop, this));
-        ReqInterrupt = false;
+    std::atomic<bool> ReqInterrupt{false};
+    bool Stopping = false;
+    std::exception_ptr Failure;
+    std::thread Thread;
+    TVPGraphicPreload() : Thread([this] { _thread_loop(); }) {}
+    void stop() {
+        {
+            std::lock_guard<std::mutex> lock(TaskMutex);
+            Stopping = true;
+            ReqInterrupt.store(true);
+        }
+        TaskCond.notify_one();
+        if(Thread.joinable()) Thread.join();
+        clearTask();
     }
-
-    void _thread_loop() {
-        while(true) {
-            ReqInterrupt = false;
-            tParam *CurrentTask = nullptr;
-            {
-                tTJSCSH lock(CSTask);
-                if(!TaskList.empty()) {
-                    CurrentTask = TaskList.front();
+    void _thread_loop() noexcept {
+        try {
+            while(true) {
+                std::unique_ptr<tParam> current;
+                {
+                    std::unique_lock<std::mutex> lock(TaskMutex);
+                    TaskCond.wait(lock, [this] { return Stopping || !TaskList.empty(); });
+                    if(Stopping) return;
+                    current.reset(TaskList.front());
                     TaskList.pop_front();
                 }
+                    ReqInterrupt.store(false);
+                }
+                tjs_uint totalSize = 0;
+                for(const auto &item : current->items) {
+                    if(ReqInterrupt.load()) break;
+                    totalSize += loadOneGraph(item);
+                    if(totalSize >= static_cast<tjs_uint>(current->limit)) break;
             }
-            if(!CurrentTask) {
-                std::unique_lock<std::mutex> lk(TaskMutex);
-                TaskCond.wait(lk);
-                continue;
-            }
-
-            tjs_uint totalSize = 0;
-            for(auto it = CurrentTask->items.begin();
-                it != CurrentTask->items.end(); ++it) {
-                if(ReqInterrupt)
-                    break;
-                totalSize += loadOneGraph(*it);
-                if(totalSize >= (tjs_uint)CurrentTask->limit)
-                    break;
-            }
-            delete CurrentTask;
+        } catch(...) {
+            std::lock_guard<std::mutex> lock(TaskMutex);
+            Failure = std::current_exception();
+            Stopping = true;
         }
     }
-
-    //     static int _thread_entry(void *arg) {
-    //         static_cast<TVPGraphicPreload*>(arg)->_thread_loop();
-    //         return 0;
-    //     }
-
     void clearTask() {
-        for(auto it = TaskList.begin(); it != TaskList.end(); ++it) {
-            delete *it;
-        }
+        for(auto task : TaskList) delete task;
         TaskList.clear();
     }
 
@@ -2185,6 +2188,9 @@ private:
         return ret;
     }
 };
+
+static tTVPAtExit TVPStopGraphicPreloader(
+    TVP_ATEXIT_PRI_PREPARE - 1, TVPGraphicPreload::Shutdown);
 
 class tBitmapForAsyncTouch : public tTJSNI_Bitmap {
     typedef tTJSNI_Bitmap inherit;

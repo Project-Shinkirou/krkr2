@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include "MsgIntf.h"
 #include "ThreadImpl.h"
+#include "tjsError.h"
 
 NS_KRMOVIE_BEGIN
 
@@ -56,11 +57,22 @@ bool CThread::IsCurrentThread() {
 }
 
 int CThread::entry() {
-    OnStartup();
-    Process();
-    OnExit();
+    // Preserve the worker failure for owner teardown, while always running OnExit
+    // and joining. A cancelled worker VM must not terminate the embedding process.
+    try {
+        OnStartup();
+        Process();
+    } catch(const TJS::eTJSSilent &) {
+        m_bStop = true;
+    } catch(...) {
+        m_bStop = true;
+        TVPRecordWorkerFailure(std::current_exception());
+    }
+    try { OnExit(); }
+    catch(...) { TVPRecordWorkerFailure(std::current_exception()); }
     m_bRunning = false;
-    TVPOnThreadExited();
+    try { TVPOnThreadExited(); }
+    catch(...) { TVPRecordWorkerFailure(std::current_exception()); }
     return 0;
 }
 

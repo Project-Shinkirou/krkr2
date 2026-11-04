@@ -271,9 +271,9 @@ bool tTVPBaseBitmap::Fill(tTVPRect rect, tjs_uint32 value) {
         }
         TVPEndThreadTask();
 #endif
-    static iTVPRenderMethod *method =
+    static thread_local iTVPRenderMethod *method =
         GetRenderManager()->GetRenderMethod("FillARGB");
-    static int paramid = method->EnumParameterID("color");
+    static thread_local int paramid = method->EnumParameterID("color");
     method->SetParameterColor4B(paramid, value);
     iTVPTexture2D *reftex = GetTexture();
     GetRenderManager()->OperateRect(
@@ -291,9 +291,9 @@ bool iTVPBaseBitmap::Fill(tTVPRect rect, tjs_uint32 value) {
     if(Is32BPP())
         value = TVP_REVRGB(value);
 
-    static iTVPRenderMethod *method =
+    static thread_local iTVPRenderMethod *method =
         TVPGetRenderManager()->GetRenderMethod("FillARGB");
-    static int paramid = method->EnumParameterID("color");
+    static thread_local int paramid = method->EnumParameterID("color");
     method->SetParameterColor4B(paramid, value);
     iTVPTexture2D *reftex = GetTexture();
     TVPGetRenderManager()->OperateRect(
@@ -385,17 +385,17 @@ bool iTVPBaseBitmap::FillColor(tTVPRect rect, tjs_uint32 color, tjs_int opa) {
     color = TVP_REVRGB(color);
     iTVPRenderMethod *method;
     if(opa == 255) {
-        static iTVPRenderMethod *_method =
+        static thread_local iTVPRenderMethod *_method =
             TVPGetRenderManager()->GetRenderMethod("FillColor");
-        static int opa_id = _method->EnumParameterID("opacity"),
+        static thread_local int opa_id = _method->EnumParameterID("opacity"),
                    color_id = _method->EnumParameterID("color");
         method = _method;
         method->SetParameterOpa(opa_id, opa);
         method->SetParameterColor4B(color_id, color);
     } else {
-        static iTVPRenderMethod *_method =
+        static thread_local iTVPRenderMethod *_method =
             TVPGetRenderManager()->GetRenderMethod("ConstColorAlphaBlend");
-        static int color_id = _method->EnumParameterID("color");
+        static thread_local int color_id = _method->EnumParameterID("color");
         method = _method;
         method->SetParameterColor4B(color_id, color | 0xFF000000);
     }
@@ -500,23 +500,23 @@ bool iTVPBaseBitmap::BlendColor(tTVPRect rect, tjs_uint32 color, tjs_int opa,
     color = TVP_REVRGB(color);
     iTVPRenderMethod *method;
     if(opa == 255) {
-        static iTVPRenderMethod *_method =
+        static thread_local iTVPRenderMethod *_method =
             TVPGetRenderManager()->GetRenderMethod("FillARGB");
-        static int color_id = _method->EnumParameterID("color");
+        static thread_local int color_id = _method->EnumParameterID("color");
         method = _method;
         method->SetParameterColor4B(color_id, color | 0xFF000000);
     } else if(!additive) {
-        static iTVPRenderMethod *_method =
+        static thread_local iTVPRenderMethod *_method =
             TVPGetRenderManager()->GetRenderMethod("ConstColorAlphaBlend_d");
-        static int opa_id = _method->EnumParameterID("opacity"),
+        static thread_local int opa_id = _method->EnumParameterID("opacity"),
                    color_id = _method->EnumParameterID("color");
         method = _method;
         method->SetParameterOpa(opa_id, opa);
         method->SetParameterColor4B(color_id, color);
     } else {
-        static iTVPRenderMethod *_method =
+        static thread_local iTVPRenderMethod *_method =
             TVPGetRenderManager()->GetRenderMethod("ConstColorAlphaBlend_a");
-        static int opa_id = _method->EnumParameterID("opacity"),
+        static thread_local int opa_id = _method->EnumParameterID("opacity"),
                    color_id = _method->EnumParameterID("color");
         method = _method;
         method->SetParameterOpa(opa_id, opa);
@@ -644,15 +644,15 @@ bool iTVPBaseBitmap::RemoveConstOpacity(tTVPRect rect, tjs_int level) {
 
     iTVPRenderMethod *method;
     if(level == 255) {
-        static iTVPRenderMethod *_method =
+        static thread_local iTVPRenderMethod *_method =
             TVPGetRenderManager()->GetRenderMethod("FillMask");
-        static int opa_id = _method->EnumParameterID("opacity");
+        static thread_local int opa_id = _method->EnumParameterID("opacity");
         method = _method;
         method->SetParameterOpa(opa_id, 0);
     } else {
-        static iTVPRenderMethod *_method =
+        static thread_local iTVPRenderMethod *_method =
             TVPGetRenderManager()->GetRenderMethod("RemoveConstOpacity");
-        static int opa_id = _method->EnumParameterID("opacity");
+        static thread_local int opa_id = _method->EnumParameterID("opacity");
         method = _method;
         method->SetParameterOpa(opa_id, level);
     }
@@ -734,9 +734,9 @@ bool iTVPBaseBitmap::FillMask(tTVPRect rect, tjs_int value) {
     if(!Is32BPP())
         TVPThrowExceptionMessage(TVPInvalidOperationFor8BPP);
 
-    static iTVPRenderMethod *method =
+    static thread_local iTVPRenderMethod *method =
         TVPGetRenderManager()->GetRenderMethod("FillMask");
-    static int opa_id = method->EnumParameterID("opacity");
+    static thread_local int opa_id = method->EnumParameterID("opacity");
     method->SetParameterOpa(opa_id, value);
     iTVPTexture2D *reftex = GetTexture();
     TVPGetRenderManager()->OperateRect(
@@ -915,17 +915,17 @@ bool tTVPBaseBitmap::CopyRect(tjs_int x, tjs_int y, const iTVPBaseBitmap *ref,
     iTVPRenderMethod *method;
     switch(plane) {
         case TVP_BB_COPY_MAIN: {
-            static iTVPRenderMethod *_method =
+            static thread_local iTVPRenderMethod *_method =
                 GetRenderManager()->GetRenderMethod("CopyColor");
             method = _method;
         } break;
         case TVP_BB_COPY_MASK: {
-            static iTVPRenderMethod *_method =
+            static thread_local iTVPRenderMethod *_method =
                 GetRenderManager()->GetRenderMethod("CopyMask");
             method = _method;
         } break;
         case TVP_BB_COPY_MAIN | TVP_BB_COPY_MASK: {
-            static iTVPRenderMethod *_method =
+            static thread_local iTVPRenderMethod *_method =
                 GetRenderManager()->GetRenderMethod("Copy");
             method = _method;
         } break;
@@ -1022,17 +1022,17 @@ bool iTVPBaseBitmap::CopyRect(tjs_int x, tjs_int y, const iTVPBaseBitmap *ref,
     iTVPRenderMethod *method;
     switch(plane) {
         case TVP_BB_COPY_MAIN: {
-            static iTVPRenderMethod *_method =
+            static thread_local iTVPRenderMethod *_method =
                 TVPGetRenderManager()->GetRenderMethod("CopyColor");
             method = _method;
         } break;
         case TVP_BB_COPY_MASK: {
-            static iTVPRenderMethod *_method =
+            static thread_local iTVPRenderMethod *_method =
                 TVPGetRenderManager()->GetRenderMethod("CopyMask");
             method = _method;
         } break;
         case TVP_BB_COPY_MAIN | TVP_BB_COPY_MASK: {
-            static iTVPRenderMethod *_method =
+            static thread_local iTVPRenderMethod *_method =
                 TVPGetRenderManager()->GetRenderMethod("Copy");
             method = _method;
         } break;
@@ -1163,7 +1163,7 @@ bool iTVPBaseBitmap::Copy9Patch(const iTVPBaseBitmap *ref, tTVPRect &margin) {
         return false;
 
     if(!TVPGetRenderManager()->IsSoftware()) {
-        static iTVPRenderMethod *method =
+        static thread_local iTVPRenderMethod *method =
             TVPGetRenderManager()->GetRenderMethod("Copy");
         iTVPTexture2D *reftex = GetTexture();
         tTVPRect rcdest(0, 0, dw, dh);
@@ -2343,7 +2343,7 @@ bool iTVPBaseBitmap::StretchBlt(tTVPRect cliprect, tTVPRect destrect,
         destrect.bottom = cr.bottom;
     }
 
-    static int StretchTypeId =
+    static thread_local int StretchTypeId =
         TVPGetRenderManager()->EnumParameterID("StretchType");
     TVPGetRenderManager()->SetParameterInt(StretchTypeId, (int)type);
 
@@ -4013,7 +4013,7 @@ bool iTVPBaseBitmap::AffineBlt(tTVPRect destrect, const iTVPBaseBitmap *ref,
     };
 
     auto type = (tTVPBBStretchType)(mode & stTypeMask);
-    static int StretchTypeId =
+    static thread_local int StretchTypeId =
         TVPGetRenderManager()->EnumParameterID("StretchType");
     TVPGetRenderManager()->SetParameterInt(StretchTypeId, (int)type);
     iTVPRenderManager *mgr = GetRenderManager();
@@ -4445,18 +4445,18 @@ bool iTVPBaseBitmap::InternalDoBoxBlur(tTVPRect rect, tTVPRect area,
     iTVPRenderMethod *method;
     int idL, idT, idR, idB;
     if(hasalpha) {
-        static iTVPRenderMethod *_method =
+        static thread_local iTVPRenderMethod *_method =
             TVPGetRenderManager()->GetRenderMethod("BoxBlurAlpha");
-        static int _idL = _method->EnumParameterID("area_left"),
+        static thread_local int _idL = _method->EnumParameterID("area_left"),
                    _idT = _method->EnumParameterID("area_top"),
                    _idR = _method->EnumParameterID("area_right"),
                    _idB = _method->EnumParameterID("area_bottom");
         idL = _idL, idT = _idT, idR = _idR, idB = _idB;
         method = _method;
     } else {
-        static iTVPRenderMethod *_method =
+        static thread_local iTVPRenderMethod *_method =
             TVPGetRenderManager()->GetRenderMethod("BoxBlur");
-        static int _idL = _method->EnumParameterID("area_left"),
+        static thread_local int _idL = _method->EnumParameterID("area_left"),
                    _idT = _method->EnumParameterID("area_top"),
                    _idR = _method->EnumParameterID("area_right"),
                    _idB = _method->EnumParameterID("area_bottom");
@@ -4542,7 +4542,7 @@ void iTVPBaseBitmap::UDFlip(const tTVPRect &rect) {
     iTVPTexture2D *reftex = GetTexture();
     tRenderTexRectArray::Element src_tex[] = { tRenderTexRectArray::Element(
         reftex, tTVPRect(rect.left, rect.bottom, rect.right, rect.top)) };
-    static iTVPRenderMethod *method =
+    static thread_local iTVPRenderMethod *method =
         GetRenderManager()->GetRenderMethod("Copy");
     TVPGetRenderManager()->OperateRect(
         method, GetTextureForRender(method->IsBlendTarget(), &rect), reftex,
@@ -4660,9 +4660,9 @@ void iTVPBaseBitmap::AdjustGamma(tTVPRect rect,
 
 	TVPUninitGammaAdjustTempData(&temp);
 #endif
-    static iTVPRenderMethod *method =
+    static thread_local iTVPRenderMethod *method =
         TVPGetRenderManager()->GetRenderMethod("AdjustGamma");
-    static int data_id = method->EnumParameterID("gammaAdjustData");
+    static thread_local int data_id = method->EnumParameterID("gammaAdjustData");
     method->SetParameterPtr(data_id, &data);
     iTVPTexture2D *reftex = GetTexture();
     TVPGetRenderManager()->OperateRect(
@@ -4708,9 +4708,9 @@ void iTVPBaseBitmap::AdjustGammaForAdditiveAlpha(
 
 	TVPUninitGammaAdjustTempData(&temp);
 #endif
-    static iTVPRenderMethod *method =
+    static thread_local iTVPRenderMethod *method =
         TVPGetRenderManager()->GetRenderMethod("AdjustGamma_a");
-    static int data_id = method->EnumParameterID("gammaAdjustData");
+    static thread_local int data_id = method->EnumParameterID("gammaAdjustData");
     method->SetParameterPtr(data_id, &data);
     iTVPTexture2D *reftex = GetTexture();
     TVPGetRenderManager()->OperateRect(

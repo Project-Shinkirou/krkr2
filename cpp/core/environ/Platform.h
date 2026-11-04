@@ -3,6 +3,24 @@
 #include <string>
 #include <vector>
 #include <spdlog/spdlog.h>
+#include "EmbeddedModal.h"
+
+inline int TVPRequestEmbeddedModal(const TVPEmbeddedModalHost &host,
+                                  const ttstr &caption, const ttstr &message,
+                                  const std::vector<ttstr> &buttons,
+                                  ttstr *input) {
+    std::vector<std::string> labels;
+    labels.reserve(buttons.size());
+    for(const auto &button : buttons)
+        labels.push_back(button.AsStdString());
+    std::string text = input ? input->AsStdString() : std::string{};
+    const int result = host.request(host.context, caption.AsStdString(),
+                                    message.AsStdString(), labels,
+                                    input ? &text : nullptr);
+    if(result >= 0 && input)
+        *input = ttstr(text);
+    return result;
+}
 
 struct TVPMemoryInfo { // all in kB
     unsigned long MemTotal;

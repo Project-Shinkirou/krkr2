@@ -47,3 +47,4 @@ public:
 };
 
 void TVPInitUIExtension();
+void TVPUninitUIExtension();

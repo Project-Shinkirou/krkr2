@@ -1,4 +1,5 @@
 #include "RenderManager.h"
+#include "../environ/EmbeddedSession.h"
 #include "renderer/CCTexture2D.h"
 typedef cocos2d::Texture2D::PixelFormat CCPixelFormat;
 #include "MsgIntf.h"
@@ -2568,6 +2569,10 @@ void iTVPRenderManager::Initialize() {
     RenderMethodCache = new tRenderMethodCache(this);
 }
 
+iTVPRenderManager::~iTVPRenderManager() {
+    delete RenderMethodCache;
+}
+
 void iTVPRenderManager::RegisterRenderMethod(const char *name,
                                              iTVPRenderMethod *method) {
     tjs_uint32 hash = tTJSHashFunc<tjs_nchar *>::Make(name);
@@ -4860,6 +4865,16 @@ public:
 
 static std::map<ttstr, std::pair<iTVPRenderManager *(*)(), iTVPRenderManager *>>
     *_RenderManagerFactory;
+static iTVPRenderManager *TVPActiveRenderManager = nullptr;
+
+void TVPReleaseRenderManagers() {
+    TVPActiveRenderManager = nullptr;
+    if(!_RenderManagerFactory) return;
+    for(auto &entry : *_RenderManagerFactory) {
+        delete entry.second.second;
+        entry.second.second = nullptr;
+    }
+}
 
 void TVPRegisterRenderManager(const char *name, iTVPRenderManager *(*func)()) {
     if(!_RenderManagerFactory)
@@ -4883,29 +4898,27 @@ iTVPRenderManager *TVPGetRenderManager(const ttstr &name) {
 }
 
 iTVPRenderManager *TVPGetRenderManager() {
-    static iTVPRenderManager *_RenderManager;
-    if(!_RenderManager) {
-        ttstr str =
-            IndividualConfigManager::GetInstance()->GetValue<std::string>(
-                "renderer", "software");
-        _RenderManager = TVPGetRenderManager(str);
+    if(!TVPActiveRenderManager) {
+        const auto embedded = TVPGetEmbeddedSessionHost();
+        ttstr str = embedded ? ttstr(embedded->renderer) :
+            ttstr(IndividualConfigManager::GetInstance()->GetValue<std::string>(
+                "renderer", "software"));
+        TVPActiveRenderManager = TVPGetRenderManager(str);
     }
-    return _RenderManager;
+    return TVPActiveRenderManager;
 }
 
 bool TVPIsSoftwareRenderManager() {
-    static bool ret = TVPGetRenderManager()->IsSoftware();
-    return ret;
+    return TVPGetRenderManager()->IsSoftware();
 }
 
 iTVPRenderManager *TVPGetSoftwareRenderManager() { // for province image process
-    static tTVPSoftwareRenderManager *mgr = new tTVPSoftwareRenderManager;
-    return mgr;
+    return TVPGetRenderManager(TJS_W("software"));
 }
 
 static class __tTVPSoftwareRenderManagerAutoReigster {
 public:
     __tTVPSoftwareRenderManagerAutoReigster() {
-        TVPRegisterRenderManager("software", TVPGetSoftwareRenderManager);
+        TVPRegisterRenderManager("software", []() -> iTVPRenderManager * { return new tTVPSoftwareRenderManager; });
     }
 } __tTVPSoftwareRenderManagerAutoReigster_instance;

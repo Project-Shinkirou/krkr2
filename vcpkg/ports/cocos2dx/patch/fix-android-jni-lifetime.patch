@@ -1,0 +1,83 @@
+diff --git a/cocos/platform/android/jni/JniHelper.cpp b/cocos/platform/android/jni/JniHelper.cpp
+--- a/cocos/platform/android/jni/JniHelper.cpp
++++ b/cocos/platform/android/jni/JniHelper.cpp
+@@ -99,5 +99,5 @@ namespace cocos2d {
+         switch (ret) {
+         case JNI_OK :
+-            // Success!
+-            pthread_setspecific(g_key, _env);
++            // An existing Java/Rust attachment is not owned by Cocos.
++            // Its scoped owner may detach before this thread next calls us.
+             return _env;
+@@ -129,6 +129,5 @@ namespace cocos2d {
+     JNIEnv* JniHelper::getEnv() {
+-        JNIEnv *_env = (JNIEnv *)pthread_getspecific(g_key);
+-        if (_env == nullptr)
+-            _env = JniHelper::cacheEnv(_psJavaVM);
+-        return _env;
++        // Never reuse an environment across a scoped host detach/reattach.
++        // TLS marks only attachments created here, for the detach destructor.
++        return _psJavaVM ? JniHelper::cacheEnv(_psJavaVM) : nullptr;
+     }
+@@ -140,33 +139,33 @@ namespace cocos2d {
+     bool JniHelper::setClassLoaderFrom(jobject activityinstance) {
+-        JniMethodInfo _getclassloaderMethod;
+-        if (!JniHelper::getMethodInfo_DefaultClassLoader(_getclassloaderMethod,
+-                                                         "android/content/Context",
+-                                                         "getClassLoader",
+-                                                         "()Ljava/lang/ClassLoader;")) {
+-            return false;
+-        }
+-
+-        jobject _c = cocos2d::JniHelper::getEnv()->CallObjectMethod(activityinstance,
+-                                                                    _getclassloaderMethod.methodID);
+-
+-        if (nullptr == _c) {
+-            return false;
+-        }
+-
+-        JniMethodInfo _m;
+-        if (!JniHelper::getMethodInfo_DefaultClassLoader(_m,
+-                                                         "java/lang/ClassLoader",
+-                                                         "loadClass",
+-                                                         "(Ljava/lang/String;)Ljava/lang/Class;")) {
+-            return false;
+-        }
+-
+-        JniHelper::classloader = cocos2d::JniHelper::getEnv()->NewGlobalRef(_c);
+-        JniHelper::loadclassMethod_methodID = _m.methodID;
+-        JniHelper::_activity = cocos2d::JniHelper::getEnv()->NewGlobalRef(activityinstance);
++        auto env = getEnv();
++        if (!env || !activityinstance) return false;
++        if (classloader && _activity && env->IsSameObject(_activity, activityinstance)) return true;
++        if (env->PushLocalFrame(8) != JNI_OK) return false;
++        const auto finish = [env](bool result) { env->PopLocalFrame(nullptr); return result; };
++        auto contextClass = env->GetObjectClass(activityinstance);
++        if (!contextClass || env->ExceptionCheck()) return finish(false);
++        auto getLoader = env->GetMethodID(contextClass, "getClassLoader", "()Ljava/lang/ClassLoader;");
++        if (!getLoader || env->ExceptionCheck()) return finish(false);
++        auto loader = env->CallObjectMethod(activityinstance, getLoader);
++        if (!loader || env->ExceptionCheck()) return finish(false);
++        auto loaderClass = env->GetObjectClass(loader);
++        if (!loaderClass || env->ExceptionCheck()) return finish(false);
++        auto loadClass = env->GetMethodID(loaderClass, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;");
++        if (!loadClass || env->ExceptionCheck()) return finish(false);
++        auto globalLoader = env->NewGlobalRef(loader);
++        if (!globalLoader) return finish(false);
++        auto globalContext = env->NewGlobalRef(activityinstance);
++        if (!globalContext) {
++            env->DeleteGlobalRef(globalLoader);
++            return finish(false);
++        }
++        if (classloader) env->DeleteGlobalRef(classloader);
++        if (_activity) env->DeleteGlobalRef(_activity);
++        classloader = globalLoader;
++        _activity = globalContext;
++        loadclassMethod_methodID = loadClass;
+         if (JniHelper::classloaderCallback != nullptr){
+             JniHelper::classloaderCallback();
+         }
+-
+-        return true;
++        return finish(!env->ExceptionCheck());
+     }

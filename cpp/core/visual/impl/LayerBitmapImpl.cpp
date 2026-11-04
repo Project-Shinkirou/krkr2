@@ -87,6 +87,7 @@ void TVPUninitializeFontRasterizers() {
         delete TVPFontSystem;
         TVPFontSystem = nullptr;
     }
+    TVPFontRasterizersInit = false;
 }
 static tTVPAtExit TVPUninitializeFontRaster(TVP_ATEXIT_PRI_RELEASE,
                                             TVPUninitializeFontRasterizers);
@@ -770,6 +771,13 @@ struct tTVPDrawTextData {
 
 static iTVPTexture2D *_CharacterTexture = nullptr,
                      *_CharacterTextureRGBA = nullptr;
+static void TVPReleaseGlyphTextures() {
+    if(_CharacterTexture) _CharacterTexture->Release();
+    if(_CharacterTextureRGBA) _CharacterTextureRGBA->Release();
+    _CharacterTexture = _CharacterTextureRGBA = nullptr;
+}
+static tTVPAtExit TVPReleaseGlyphTexturesAtExit(
+    TVP_ATEXIT_PRI_RELEASE, TVPReleaseGlyphTextures);
 
 bool tTVPNativeBaseBitmap::InternalBlendText(tTVPCharacterData *data,
                                              tTVPDrawTextData *dtdata,
@@ -786,15 +794,15 @@ bool tTVPNativeBaseBitmap::InternalBlendText(tTVPCharacterData *data,
     iTVPRenderMethod *method = nullptr;
     int opa_id, clr_id;
 #define GEMTHOD_OPA_CLR(n)                                                     \
-    static iTVPRenderMethod *_method =                                         \
+    static thread_local iTVPRenderMethod *_method =                            \
         TVPGetRenderManager()->GetRenderMethod(#n);                            \
-    static int _opa_id = _method->EnumParameterID("opacity");                  \
-    static int _clr_id = _method->EnumParameterID("color");                    \
+    static thread_local int _opa_id = _method->EnumParameterID("opacity");     \
+    static thread_local int _clr_id = _method->EnumParameterID("color");       \
     method = _method;                                                          \
     opa_id = _opa_id;                                                          \
     clr_id = _clr_id;
 
-    static bool fastGPURoute = !TVPIsSoftwareRenderManager() &&
+    static thread_local bool fastGPURoute = !TVPIsSoftwareRenderManager() &&
         !IndividualConfigManager::GetInstance()->GetValue<bool>(
             "ogl_accurate_render", false);
 

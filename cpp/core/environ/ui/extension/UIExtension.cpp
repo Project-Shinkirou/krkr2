@@ -257,4 +257,12 @@ void TVPInitUIExtension() {
     CSLoader::getInstance();
     static cocos2d::ObjectFactory::TInfo __Type(
         "NodeReader", WidgetNodeReader::createInstance);
+    // Director destroys ObjectFactory; restore this override on every launch.
+    cocos2d::ObjectFactory::getInstance()->registerType(__Type);
+}
+
+void TVPUninitUIExtension() {
+    // CSLoader outlives Director by default, but its factories/timeline cache do
+    // not. Destroy it before the GL/scene lifetime ends so reopening reindexes.
+    CSLoader::destroyInstance();
 }

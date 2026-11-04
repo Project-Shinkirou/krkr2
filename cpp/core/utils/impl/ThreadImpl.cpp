@@ -30,6 +30,21 @@
 #endif
 
 #include <thread>
+#include "tjsError.h"
+static std::mutex TVPWorkerFailureMutex;
+static std::exception_ptr TVPWorkerFailure;
+void TVPRecordWorkerFailure(std::exception_ptr failure) {
+    std::lock_guard<std::mutex> lock(TVPWorkerFailureMutex);
+    if(!TVPWorkerFailure) TVPWorkerFailure = failure;
+}
+void TVPThrowWorkerFailure() {
+    std::exception_ptr failure;
+    {
+        std::lock_guard<std::mutex> lock(TVPWorkerFailureMutex);
+        std::swap(failure, TVPWorkerFailure);
+    }
+    if(failure) std::rethrow_exception(failure);
+}
 
 //---------------------------------------------------------------------------
 // tTVPThread : a wrapper class for thread
@@ -47,17 +62,25 @@ tTVPThread::tTVPThread(bool suspended) {
 }
 
 //---------------------------------------------------------------------------
-tTVPThread::~tTVPThread() { WaitFor(); }
+tTVPThread::~tTVPThread() { Terminate(); WaitFor(); }
 
 //---------------------------------------------------------------------------
 void *tTVPThread::StartProc(void *arg) {
     auto *_this = (tTVPThread *)arg;
-    if(_this->Suspended) {
+    {
         std::unique_lock lk(_this->_mutex);
-        _this->_cond.wait(lk);
+        _this->_cond.wait(lk, [_this] { return !_this->Suspended || _this->Terminated; });
     }
-    _this->Execute();
-    TVPOnThreadExited();
+    try {
+        if(!_this->Terminated) _this->Execute();
+    } catch(const TJS::eTJSSilent &) {
+        _this->Terminated = true;
+    } catch(...) {
+        _this->Terminated = true;
+        TVPRecordWorkerFailure(std::current_exception());
+    }
+    try { TVPOnThreadExited(); }
+    catch(...) { TVPRecordWorkerFailure(std::current_exception()); }
     return nullptr;
 }
 
@@ -86,7 +109,10 @@ void tTVPThread::SetPriority(tTVPThreadPriority pri) {
 // }
 //---------------------------------------------------------------------------
 void tTVPThread::Resume() {
-    Suspended = false;
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+        Suspended = false;
+    }
     _cond.notify_one();
     // while((tjs_int32)ResumeThread(Handle) > 1) ;
 }
