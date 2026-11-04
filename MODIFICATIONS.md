@@ -29,3 +29,5 @@ Build with the target's prepared vcpkg dependencies using the ShinkiEMU `native-
 ## FFmpeg iOS configure target
 
 The `ffmpeg@3.3.9` overlay adds port-version `2`. Its iOS branch now passes `--target-os=darwin`, matching FFmpeg's Apple platform name. Previously it enabled cross compilation but omitted that required configure option, causing the arm64-ios configure step to fail with `Must specify target arch and OS when cross-compiling`. `build.sh.in` already passes `--arch=${BUILD_ARCH}` and retains that architecture selection, SDK/compiler flags and all configure checks. FFmpeg is still built and linked; no codec, probe or validation is replaced or skipped.
+
+The embedded CMake entrypoint preserves the explicitly selected vcpkg triplet instead of invoking the standalone Android script that forcibly resets it. Android chainloads the NDK toolchain from `ANDROID_NDK_HOME`; iOS passes its system name, device/simulator SDK, architecture and deployment target explicitly. Cross builds cannot silently select the host platform.

@@ -43,8 +43,22 @@ fn build() -> Result<(), Box<dyn std::error::Error>> {
             other => return Err(format!("unsupported Android architecture {other}").into()),
         };
         definitions.extend([("ANDROID".into(), "ON".into()), ("ANDROID_ABI".into(), abi.into()), ("ANDROID_PLATFORM".into(), "android-28".into())]);
+        let ndk = PathBuf::from(env::var_os("ANDROID_NDK_HOME").ok_or("ANDROID_NDK_HOME missing")?);
+        definitions.push(("VCPKG_CHAINLOAD_TOOLCHAIN_FILE".into(), ndk.join("build/cmake/android.toolchain.cmake").to_string_lossy().replace('\\', "/")));
     } else {
         definitions.extend([("APPLE".into(), "ON".into()), ("IOS".into(), "ON".into())]);
+        let arch = if target.starts_with("aarch64-") { "arm64" } else { "x86_64" };
+        let sdk = if target.ends_with("ios-sim") || target.starts_with("x86_64-") {
+            "iphonesimulator"
+        } else {
+            "iphoneos"
+        };
+        definitions.extend([
+            ("CMAKE_SYSTEM_NAME".into(), "iOS".into()),
+            ("CMAKE_OSX_ARCHITECTURES".into(), arch.into()),
+            ("CMAKE_OSX_SYSROOT".into(), sdk.into()),
+            ("CMAKE_OSX_DEPLOYMENT_TARGET".into(), "16.0".into()),
+        ]);
     }
     let query = PathBuf::from(env::var_os("OUT_DIR").ok_or("missing OUT_DIR")?).join("native/.cmake/api/v1/query");
     fs::create_dir_all(&query)?;

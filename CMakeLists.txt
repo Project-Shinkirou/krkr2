@@ -14,7 +14,7 @@ add_compile_definitions(
         $<$<NOT:$<CONFIG:Debug>>:NDEBUG>
 )
 
-if(ANDROID)
+if(ANDROID AND NOT KRKR2_SHINKI_EMU)
     set(VCPKG_TARGET_ANDROID ON)
     set(ENV{ANDROID_NDK_HOME} "$ENV{ANDROID_NDK}")
     add_compile_options(-Wno-inconsistent-missing-override)
