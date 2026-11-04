@@ -464,8 +464,8 @@ int TVPShowSimpleMessageBox(const ttstr &text, const ttstr &caption,
     }
 
     return -1;
-}
 #endif
+}
 
 extern "C" int TVPShowSimpleMessageBox(const char *pszText, const char *pszTitle,
                             unsigned int nButton, const char **btnText) {
@@ -481,8 +481,8 @@ std::string TVPGetPackageVersionString() {
     return "ios";
 #else
     return "macos";
-}
 #endif
+}
 
 bool TVP_stat(const char *name, tTVP_stat &s) {
     struct stat t{};
