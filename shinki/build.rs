@@ -1,7 +1,62 @@
 use shinki_emu_build::{configure_cmake, write_core_build_manifest, BuildAsset, CoreBuildManifest};
-use std::{env, fs, path::PathBuf};
+use std::{env, fs, path::{Path, PathBuf}, process::Command};
 mod static_link;
 mod android_java;
+
+fn verify_bison(path: &Path) -> Result<(), String> {
+    let output = Command::new(path).arg("--version").output()
+        .map_err(|error| format!("{}: {error}", path.display()))?;
+    if !output.status.success() {
+        return Err(format!("{} --version exited {}", path.display(), output.status));
+    }
+    let text = String::from_utf8(output.stdout)
+        .map_err(|error| format!("{} --version: {error}", path.display()))?;
+    let first = text.lines().next().unwrap_or("");
+    let version = first.split_ascii_whitespace().find_map(|token| {
+        let mut parts = token.split('.');
+        let major = parts.next()?.parse::<u32>().ok()?;
+        let minor = parts.next()?.parse::<u32>().ok()?;
+        let patch = parts.next().unwrap_or("0").parse::<u32>().ok()?;
+        Some((major, minor, patch))
+    }).ok_or_else(|| format!("{}: cannot parse Bison version from {first:?}", path.display()))?;
+    if version < (3, 8, 2) {
+        return Err(format!("{} reports {first:?}; the grammar requires Bison >= 3.8.2", path.display()));
+    }
+    Ok(())
+}
+
+fn select_bison() -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let mut rejected = None;
+    if let Some(path) = env::var_os("BISON_EXECUTABLE").map(PathBuf::from) {
+        match verify_bison(&path) {
+            Ok(()) => return Ok(path),
+            Err(error) => rejected = Some(error),
+        }
+    }
+    // Homebrew Bison is keg-only. The system /usr/bin/bison is not a usable
+    // substitute when xtask discovers it before the supported installation.
+    if cfg!(target_os = "macos") {
+        if let Ok(output) = Command::new("brew").args(["--prefix", "bison"]).output() {
+            if output.status.success() {
+                let prefix = String::from_utf8(output.stdout)?;
+                let path = PathBuf::from(prefix.trim()).join("bin/bison");
+                match verify_bison(&path) {
+                    Ok(()) => {
+                        if let Some(error) = rejected {
+                            println!("cargo:warning={error}; selecting {}", path.display());
+                        }
+                        return Ok(path);
+                    }
+                    Err(error) => rejected = Some(error),
+                }
+            }
+        }
+    }
+    Err(format!(
+        "GNU Bison >= 3.8.2 is required. Set BISON_EXECUTABLE to a supported executable; on macOS run `brew install bison`. {}",
+        rejected.as_deref().unwrap_or("BISON_EXECUTABLE was not set and no supported Homebrew Bison was found.")
+    ).into())
+}
 
 fn build() -> Result<(), Box<dyn std::error::Error>> {
     let target = env::var("TARGET")?;
@@ -20,8 +75,7 @@ fn build() -> Result<(), Box<dyn std::error::Error>> {
     if !toolchain.is_file() || !installed.join(&triplet).join("lib").is_dir() {
         return Err("KrKr2 native dependencies missing; run cargo xtask deps --core krkr2 for this target".into());
     }
-    let bison = PathBuf::from(env::var_os("BISON_EXECUTABLE").ok_or("BISON_EXECUTABLE missing")?);
-    if !bison.is_file() { return Err("Bison executable missing".into()); }
+    let bison = select_bison()?;
     for name in ["VCPKG_ROOT", "SHINKI_EMU_VCPKG_TRIPLET", "SHINKI_EMU_NATIVE_VCPKG_ROOT", "BISON_EXECUTABLE", "ANDROID_NDK_HOME"] {
         println!("cargo:rerun-if-env-changed={name}");
     }
