@@ -14,7 +14,7 @@ pub fn resolve_archive(token: &str, directory: &Path, project_artifacts: &BTreeS
     let input = PathBuf::from(token);
     let path = if input.is_absolute() { input.clone() } else { directory.join(&input) };
     if !path.is_file() { return Err(format!("static dependency missing: {}", path.display()).into()); }
-    if !input.is_absolute() && !project_artifacts.contains(&fs::canonicalize(&path)?) {
+    if !input.is_absolute() && !project_artifacts.contains(&fs::canonicalize(&path).map_err(|error| format!("canonicalizing CMake archive {}: {error}", path.display()))?) {
         return Err(format!("relative archive is absent from CMake target artifacts: {token}").into());
     }
     Ok(path)

@@ -8,25 +8,92 @@ type Result<T, E = Box<dyn Error>> = std::result::Result<T, E>;
 const EXPORTS: [&str; 3] = ["shinki_emu_krkr2_query", "shinki_emu_krkr2_set_resource_root", "shinki_emu_krkr2_android_initialize"];
 const APPLE_EXPORTS: [&str; 1] = ["_shinki_emu_krkr2_query"];
 
-fn capture(command: &mut Command) -> Result<String> {
-    let output = command.output()?;
-    if !output.status.success() {
-        return Err(format!("{command:?}: {}", String::from_utf8_lossy(&output.stderr)).into());
-    }
-    Ok(String::from_utf8(output.stdout)?)
+#[path = "tool_paths.rs"]
+mod tool_paths;
+
+pub struct Tools {
+    nm: PathBuf,
+    objcopy: PathBuf,
+    ar: PathBuf,
+    ld_lld: Option<PathBuf>,
 }
-fn json(path: &Path) -> Result<Value> { Ok(serde_json::from_slice(&fs::read(path)?)?) }
+
+fn required_tool(name: &str, preferred: Option<&Path>, search: &std::ffi::OsStr, allow_path: bool, hint: &str) -> Result<PathBuf> {
+    let filename = format!("{name}{}", if cfg!(windows) { ".exe" } else { "" });
+    let resolved = if allow_path {
+        tool_paths::resolve(&filename, preferred, search)
+    } else {
+        preferred.map(|directory| directory.join(&filename)).filter(|path| path.is_file())
+    };
+    resolved.ok_or_else(|| {
+        let attempted = preferred.map(|directory| directory.join(&filename)).unwrap_or_else(|| PathBuf::from(&filename));
+        format!("required native tool {name} is missing; {hint}; {}",
+            crate::command::describe(&Command::new(attempted))).into()
+    })
+}
+
+pub fn prepare_tools(target: &str) -> Result<Tools> {
+    let apple = target.contains("apple-ios");
+    let search = env::var_os("PATH").unwrap_or_default();
+    let (preferred, discovery) = if apple {
+        let discovered = (|| -> Result<PathBuf> {
+            let rustc = env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+            let sysroot = capture(Command::new(rustc).args(["--print", "sysroot"]))?;
+            if sysroot.trim().is_empty() { return Err("rustc --print sysroot returned an empty path".into()); }
+            let host = env::var("HOST").map_err(|error| format!("reading Cargo HOST for Rust LLVM tools: {error}"))?;
+            Ok(PathBuf::from(sysroot.trim()).join("lib/rustlib").join(host).join("bin"))
+        })();
+        match discovered {
+            Ok(directory) => (Some(directory), String::new()),
+            Err(error) => (None, format!("Rust sysroot discovery: {error}")),
+        }
+    } else {
+        let ndk = PathBuf::from(env::var_os("ANDROID_NDK_HOME").ok_or("ANDROID_NDK_HOME missing")?);
+        let host = if cfg!(windows) { "windows-x86_64" } else if cfg!(target_os = "macos") { "darwin-x86_64" } else { "linux-x86_64" };
+        (Some(ndk.join("toolchains/llvm/prebuilt").join(host).join("bin")), String::new())
+    };
+    let hint = if apple {
+        "install matching Rust LLVM tools with `rustup component add llvm-tools-preview`; LLVM tools on PATH may also be used"
+    } else {
+        "check ANDROID_NDK_HOME and the NDK LLVM prebuilt tool directory"
+    };
+    let resolve = |name| required_tool(name, preferred.as_deref(), &search, apple, hint)
+        .map_err(|error| -> Box<dyn Error> { format!("{error}; {discovery}").into() });
+    Ok(Tools {
+        nm: resolve("llvm-nm")?,
+        objcopy: resolve("llvm-objcopy")?,
+        ar: resolve("llvm-ar")?,
+        ld_lld: if apple { None } else { Some(resolve("ld.lld")?) },
+    })
+}
+
+fn io_at<T>(operation: &str, path: &Path, result: std::io::Result<T>) -> Result<T> {
+    result.map_err(|error| format!("{operation} {}: {error}", path.display()).into())
+}
+
+fn capture(command: &mut Command) -> Result<String> {
+    let output = crate::command::output(command)?;
+    if !output.status.success() {
+        return Err(format!("{}; exited {}; stderr={}", crate::command::describe(command), output.status, String::from_utf8_lossy(&output.stderr)).into());
+    }
+    String::from_utf8(output.stdout).map_err(|error| format!("{}; exited {}; output was not UTF-8: {error}", crate::command::describe(command), output.status).into())
+}
+fn json(path: &Path) -> Result<Value> {
+    let bytes = io_at("reading CMake JSON", path, fs::read(path))?;
+    serde_json::from_slice(&bytes).map_err(|error| format!("parsing CMake JSON {}: {error}", path.display()).into())
+}
 
 #[path = "static_link_plan.rs"]
 mod link_plan;
 enum LinkInput { Archive(usize), Whole(bool) }
-pub fn link(native: &Path, adapter: &Path) -> Result<PathBuf> {
+pub fn link(native: &Path, adapter: &Path, tools: &Tools) -> Result<PathBuf> {
     let target = env::var("TARGET")?;
     let apple = target.contains("apple-ios");
     let exports: &[&str] = if apple { &APPLE_EXPORTS } else { &EXPORTS };
     let namespace = if apple { "_shinki_krkr2_" } else { "shinki_krkr2_" };
     let reply = native.join(".cmake/api/v1/reply");
-    let mut indices = fs::read_dir(&reply)?.collect::<std::io::Result<Vec<_>>>()?;
+    let entries = io_at("reading CMake File API reply directory", &reply, fs::read_dir(&reply))?;
+    let mut indices = io_at("enumerating CMake File API replies", &reply, entries.collect::<std::io::Result<Vec<_>>>())?;
     indices.retain(|entry| entry.file_name().to_string_lossy().starts_with("index-"));
     indices.sort_by_key(|entry| entry.file_name());
     let index = json(&indices.last().ok_or("CMake File API index missing")?.path())?;
@@ -42,7 +109,7 @@ pub fn link(native: &Path, adapter: &Path) -> Result<PathBuf> {
         if target["type"] != "STATIC_LIBRARY" { continue; }
         for artifact in target["artifacts"].as_array().ok_or("CMake archive artifacts missing")? {
             let path = native.join(artifact["path"].as_str().ok_or("CMake artifact path missing")?);
-            if path.is_file() { project_artifacts.insert(fs::canonicalize(path)?); }
+            if path.is_file() { project_artifacts.insert(io_at("canonicalizing CMake archive", &path, fs::canonicalize(&path))?); }
         }
     }
     let resolve = |token: &str| link_plan::resolve_archive(token, &directory, &project_artifacts);
@@ -78,7 +145,7 @@ pub fn link(native: &Path, adapter: &Path) -> Result<PathBuf> {
         if !search.contains(&parent) { search.push(parent); }
     }
     let mut archives = vec![adapter.to_owned()];
-    let mut archive_ids = BTreeMap::from([(fs::canonicalize(adapter)?, 0)]);
+    let mut archive_ids = BTreeMap::from([(io_at("canonicalizing adapter archive", adapter, fs::canonicalize(adapter))?, 0)]);
     let mut inputs = vec![LinkInput::Archive(0)];
     let mut system = BTreeSet::new();
     let mut frameworks = BTreeSet::new();
@@ -136,7 +203,7 @@ pub fn link(native: &Path, adapter: &Path) -> Result<PathBuf> {
             system.insert(name.trim_start_matches("lib").trim_end_matches(".so").to_owned());
             continue;
         } else { continue; };
-        let identity = fs::canonicalize(&path)?;
+        let identity = io_at("canonicalizing native dependency archive", &path, fs::canonicalize(&path))?;
         let index = if let Some(&index) = archive_ids.get(&identity) {
             index
         } else {
@@ -152,17 +219,6 @@ pub fn link(native: &Path, adapter: &Path) -> Result<PathBuf> {
             force_next = false;
         }
     }
-    let tools = if apple {
-        let version = capture(Command::new("rustc").arg("-vV"))?;
-        let host = version.lines().find_map(|line| line.strip_prefix("host: ")).ok_or("Rust host missing")?;
-        PathBuf::from(capture(Command::new("rustc").args(["--print", "sysroot"]))?.trim())
-            .join("lib/rustlib").join(host).join("bin")
-    } else {
-        let ndk = PathBuf::from(env::var_os("ANDROID_NDK_HOME").ok_or("ANDROID_NDK_HOME missing")?);
-        let host = if cfg!(windows) { "windows-x86_64" } else if cfg!(target_os = "macos") { "darwin-x86_64" } else { "linux-x86_64" };
-        ndk.join("toolchains/llvm/prebuilt").join(host).join("bin")
-    };
-    let executable = |name: &str| tools.join(format!("{name}{}", if cfg!(windows) { ".exe" } else { "" }));
     let object = native.join("shinki/krkr-closure.o");
     let response = native.join("shinki/krkr-closure.rsp");
     let mut args = vec!["-r".to_owned()];
@@ -198,16 +254,17 @@ pub fn link(native: &Path, adapter: &Path) -> Result<PathBuf> {
         else { args.push(format!("--undefined={export}")); }
     }
     args.extend(["-o".into(), format!("\"{}\"", object.to_string_lossy().replace('\\', "/"))]);
-    fs::write(&response, args.join("\n"))?;
+    io_at("writing native linker response", &response, fs::write(&response, args.join("\n")))?;
     if apple {
         capture(Command::new("xcrun").arg("ld").arg(format!("@{}", response.display())))?;
     } else {
-        capture(Command::new(executable("ld.lld")).arg(format!("@{}", response.display())))?;
+        let linker = tools.ld_lld.as_ref().ok_or("Android LLVM linker was not prepared")?;
+        capture(Command::new(linker).arg(format!("@{}", response.display())))?;
     }
     if !apple {
     // Keep private Java class names and native RegisterNatives tables aligned.
     // Equal-width replacements preserve ELF section offsets and relocations.
-    let mut bytes = fs::read(&object)?;
+    let mut bytes = io_at("reading native closure for JNI isolation", &object, fs::read(&object))?;
     for (before, after) in [
         (b"com/enhance".as_slice(), b"com/krkr2xx".as_slice()),
         (b"com.enhance".as_slice(), b"com.krkr2xx".as_slice()),
@@ -224,9 +281,9 @@ pub fn link(native: &Path, adapter: &Path) -> Result<PathBuf> {
             offset = start + before.len();
         }
     }
-    fs::write(&object, bytes)?;
+    io_at("writing JNI-isolated native closure", &object, fs::write(&object, bytes))?;
     }
-    let symbols = capture(Command::new(executable("llvm-nm")).args(["--defined-only", "--extern-only", "--format=posix"]).arg(&object))?;
+    let symbols = capture(Command::new(&tools.nm).args(["--defined-only", "--extern-only", "--format=posix"]).arg(&object))?;
     let mut renames = BTreeSet::new();
     for line in symbols.lines() {
         let symbol = line.split_whitespace().next().ok_or("invalid nm symbol")?;
@@ -236,19 +293,20 @@ pub fn link(native: &Path, adapter: &Path) -> Result<PathBuf> {
         }
     }
     let map = native.join("shinki/krkr-symbols.map");
-    fs::write(&map, renames.into_iter().collect::<Vec<_>>().join("\n") + "\n")?;
+    io_at("writing native symbol rename map", &map, fs::write(&map, renames.into_iter().collect::<Vec<_>>().join("\n") + "\n"))?;
     let isolated = native.join("shinki/krkr-isolated.o");
-    capture(Command::new(executable("llvm-objcopy")).arg(format!("--redefine-syms={}", map.display())).arg(&object).arg(&isolated))?;
-    let isolated_symbols = capture(Command::new(executable("llvm-nm")).args(["--defined-only", "--extern-only", "--format=posix"]).arg(&isolated))?;
+    capture(Command::new(&tools.objcopy).arg(format!("--redefine-syms={}", map.display())).arg(&object).arg(&isolated))?;
+    let isolated_symbols = capture(Command::new(&tools.nm).args(["--defined-only", "--extern-only", "--format=posix"]).arg(&isolated))?;
     let names: BTreeSet<_> = isolated_symbols.lines().filter_map(|line| line.split_whitespace().next()).collect();
     if exports.iter().any(|export| !names.contains(export))
         || names.iter().any(|name| !exports.contains(name) && !name.starts_with(namespace)) {
         return Err("Krkr static closure leaked an unisolated symbol or lost its query/resource entry".into());
     }
     let archive = native.join("shinki/libshinki_krkr2_closure.a");
-    if archive.exists() { fs::remove_file(&archive)?; }
-    capture(Command::new(executable("llvm-ar")).arg("crs").arg(&archive).arg(&isolated))?;
-    fs::write(native.join("shinki/krkr-static-inputs.json"), serde_json::to_vec_pretty(&archives)?)?;
+    if archive.exists() { io_at("removing previous isolated archive", &archive, fs::remove_file(&archive))?; }
+    capture(Command::new(&tools.ar).arg("crs").arg(&archive).arg(&isolated))?;
+    let inputs_path = native.join("shinki/krkr-static-inputs.json");
+    io_at("writing native closure input receipt", &inputs_path, fs::write(&inputs_path, serde_json::to_vec_pretty(&archives)?))?;
     println!("cargo:rustc-link-search=native={}", archive.parent().unwrap().display());
     println!("cargo:rustc-link-lib=static=shinki_krkr2_closure");
     if apple {

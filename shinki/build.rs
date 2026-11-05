@@ -2,6 +2,7 @@ use shinki_emu_build::{configure_cmake, write_core_build_manifest, BuildAsset, C
 use std::{env, fs, path::{Path, PathBuf}, process::Command};
 mod static_link;
 mod android_java;
+mod command;
 
 fn verify_bison(path: &Path) -> Result<(), String> {
     let output = Command::new(path).arg("--version").output()
@@ -76,6 +77,7 @@ fn build() -> Result<(), Box<dyn std::error::Error>> {
         return Err("KrKr2 native dependencies missing; run cargo xtask deps --core krkr2 for this target".into());
     }
     let bison = select_bison()?;
+    let native_tools = static_link::prepare_tools(&target)?;
     for name in ["VCPKG_ROOT", "SHINKI_EMU_VCPKG_TRIPLET", "SHINKI_EMU_NATIVE_VCPKG_ROOT", "BISON_EXECUTABLE", "ANDROID_NDK_HOME"] {
         println!("cargo:rerun-if-env-changed={name}");
     }
@@ -120,7 +122,7 @@ fn build() -> Result<(), Box<dyn std::error::Error>> {
     let native = configure_cmake(root, &definitions, &["shinki_emu_krkr2"])?;
     if android { android_java::stage(&adapter, &native)?; }
     let directory = native.join("shinki");
-    let library = static_link::link(&native, &directory.join("libshinki_emu_krkr2.a"))?;
+    let library = static_link::link(&native, &directory.join("libshinki_emu_krkr2.a"), &native_tools)?;
     let mut manifest = CoreBuildManifest::new("krkr2", "native-static")?;
     manifest.native_library = Some(library);
     manifest.resources.push(BuildAsset { source: directory.join("Resources"), dest: "Resources".into() });
